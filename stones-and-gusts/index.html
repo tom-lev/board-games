@@ -108,28 +108,30 @@
   <div class="rules">
     <h2>חוקים</h2>
     <ul>
-      <li>לכל שחקן 4 אבנים. בכל תור בוחרים אחת משתי פעולות:</li>
+      <li>לכל שחקן 5 אבנים. בכל תור בוחרים אחת משתי פעולות:</li>
       <li><b>הנחה:</b> לוחצים על משבצת ריקה ומניחים עליה אבן מהיד.</li>
       <li><b>נשיפה:</b> לוחצים על חץ בשולי הלוח, וכל האבנים בשורה או בטור זזות משבצת אחת בכיוון החץ. אבן שנדחפת אל מחוץ ללוח חוזרת ליד של מי שהיא שלו.</li>
-      <li>מנצח מי שיוצר ראשון שלוש אבנים ברצף בצבע שלו: בשורה, בטור או באלכסון.</li>
+      <li>מנצח מי שיוצר ראשון ארבע אבנים ברצף בצבע שלו: בשורה, בטור או באלכסון.</li>
       <li>אם נשיפה יוצרת רצף ליריב בלבד, היריב מנצח. אם היא יוצרת רצף לשניהם, מי שנשף מנצח.</li>
       <li>אסור לנשוף על שורה ריקה, ואסור לבטל מיד את הנשיפה של היריב (אותה שורה, בכיוון ההפוך).</li>
-      <li>אחרי 100 מהלכים בלי מנצח המשחק נגמר בתיקו.</li>
+      <li>תיקו: אם אותו מצב על הלוח חוזר שלוש פעמים, או אחרי 150 מהלכים בלי מנצח.</li>
     </ul>
   </div>
   <a class="back" href="../index.html">← חזרה לרשימת המשחקים</a>
 
 <script>
-const N = 5, SIZE = 25, STONES = 4, MAX_PLIES = 100;
+const N = 5, SIZE = 25, STONES = 5, K = 4, MAX_PLIES = 150;
 const COLORS = { 1: 'כתום', 2: 'תכלת' };
 
-// All 3-in-a-row windows
+// All K-in-a-row windows
 const WINDOWS = [];
 for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
   for (const [dr, dc] of [[0, 1], [1, 0], [1, 1], [1, -1]]) {
-    const r2 = r + 2 * dr, c2 = c + 2 * dc;
+    const r2 = r + (K - 1) * dr, c2 = c + (K - 1) * dc;
     if (r2 < 0 || r2 >= N || c2 < 0 || c2 >= N) continue;
-    WINDOWS.push([r * N + c, (r + dr) * N + c + dc, r2 * N + c2]);
+    const win = [];
+    for (let t = 0; t < K; t++) win.push((r + t * dr) * N + c + t * dc);
+    WINDOWS.push(win);
   }
 }
 
@@ -179,9 +181,9 @@ function legalMoves(b, p, last) {
 // Returns the winner after player `mover` moved, or 0.
 function winnerAfter(b, mover) {
   let w1 = false, w2 = false;
-  for (const [a, c, d] of WINDOWS) {
-    const v = b[a];
-    if (v && v === b[c] && v === b[d]) { if (v === 1) w1 = true; else w2 = true; }
+  for (const win of WINDOWS) {
+    const v = b[win[0]];
+    if (v && win.every(i => b[i] === v)) { if (v === 1) w1 = true; else w2 = true; }
   }
   const moverWins = mover === 1 ? w1 : w2, otherWins = mover === 1 ? w2 : w1;
   if (moverWins) return mover;
@@ -193,16 +195,17 @@ function winnerAfter(b, mover) {
 const TIMEOUT = {};
 let deadline = Infinity, nodes = 0;
 const WIN = 10000;
+const LINE_VALUE = [0, 1, 4, 14]; // by number of own stones in an otherwise empty window
 
 // Score from the point of view of p, who is about to move.
 function evaluate(b, p) {
   const o = 3 - p;
   let s = 0;
-  for (const [a, c, d] of WINDOWS) {
+  for (const win of WINDOWS) {
     let mine = 0, theirs = 0;
-    for (const v of [b[a], b[c], b[d]]) { if (v === p) mine++; else if (v === o) theirs++; }
-    if (theirs === 0) s += mine === 2 ? 14 : mine;
-    else if (mine === 0) s -= theirs === 2 ? 12 : theirs;
+    for (const i of win) { if (b[i] === p) mine++; else if (b[i] === o) theirs++; }
+    if (theirs === 0) s += LINE_VALUE[mine];
+    else if (mine === 0) s -= LINE_VALUE[theirs];
   }
   // Central stones take part in more lines
   for (let i = 0; i < SIZE; i++) {
@@ -292,7 +295,7 @@ const statusEl = document.getElementById('status');
 const cellEls = new Array(SIZE);
 const arrowEls = {}; // move -> button
 
-let board, turn, lastMove, plies, over, mode, level, busy = false, gameId = 0;
+let board, turn, lastMove, plies, seen, over, mode, level, busy = false, gameId = 0;
 const ALT = [1, 2];
 let altStarter = ALT[0];
 const score = { 1: 0, 2: 0 };
@@ -342,6 +345,7 @@ function newGame() {
   else turn = Number(starter);
   lastMove = -1;
   plies = 0;
+  seen = new Map();
   over = false;
   busy = false;
   render(new Set(), null);
@@ -382,8 +386,11 @@ function playMove(m) {
     const w = winnerAfter(board, turn);
     busy = false;
     if (w) return endGame(w, m);
-    if (plies >= MAX_PLIES) { over = true; render(new Set(), m); setStatus('תיקו: הגעתם ל־100 מהלכים', true); return; }
     turn = 3 - turn;
+    const key = board.join('') + turn;
+    seen.set(key, (seen.get(key) || 0) + 1);
+    if (seen.get(key) >= 3) return endDraw(m, 'תיקו: אותו מצב חזר שלוש פעמים');
+    if (plies >= MAX_PLIES) return endDraw(m, `תיקו: הגעתם ל־${MAX_PLIES} מהלכים`);
     render(new Set(), m);
     startTurn();
   };
@@ -406,6 +413,12 @@ function animatePush(m) {
   }
 }
 
+function endDraw(m, text) {
+  over = true;
+  render(new Set(), m);
+  setStatus(text, true);
+}
+
 function endGame(w, m) {
   over = true;
   score[w]++;
@@ -413,7 +426,7 @@ function endGame(w, m) {
   const line = new Set();
   for (const win of WINDOWS) if (win.every(i => board[i] === w)) win.forEach(i => line.add(i));
   render(line, m);
-  if (mode === 'ai') setStatus(w === 1 ? '🏆 ניצחת! שלוש ברצף' : 'המחשב יצר שלוש ברצף וניצח', true);
+  if (mode === 'ai') setStatus(w === 1 ? '🏆 ניצחת! ארבע ברצף' : 'המחשב יצר ארבע ברצף וניצח', true);
   else setStatus(`🏆 ${COLORS[w]} ניצח!`, true);
 }
 
