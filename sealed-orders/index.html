@@ -205,24 +205,51 @@ function outcome(pcs, roundNo) {
 }
 
 // ---------- AI ----------
+// Rounds until p can have a piece on each target, each piece matched to at most one target
+function arrivals(pcs, p) {
+  const pairs = [];
+  pcs[p].forEach((c, k) => TARGETS.forEach((t, ti) => pairs.push([dist(c, t), k, ti])));
+  pairs.sort((a, b) => a[0] - b[0]);
+  const arr = TARGETS.map(() => 99), used = new Set();
+  for (const [d, k, ti] of pairs) {
+    if (used.has(k) || arr[ti] !== 99) continue;
+    arr[ti] = d;
+    used.add(k);
+  }
+  return arr;
+}
+
+// p's held targets that the adjacent enemies can take next round
+function threatened(pcs, p) {
+  let n = 0;
+  for (const c of pcs[p]) {
+    if (!IS_TARGET[c]) continue;
+    const defense = 1 + pcs[p].filter(x => x !== c && dist(x, c) === 1).length;
+    const attack = pcs[1 - p].filter(x => dist(x, c) === 1).length;
+    if (attack >= defense) n++;
+  }
+  return n;
+}
+
+// Looks past this round by racing both sides to the targets
 function evaluate(pcs, me, roundNo) {
   const op = 1 - me, o = outcome(pcs, roundNo);
   if (o === me) return 1000;
   if (o === op) return -1000;
   if (o === 2) return 0;
-  let v = 40 * (held(pcs, me) - held(pcs, op)) + 25 * (pcs[me].length - pcs[op].length);
-  for (const t of TARGETS) {
-    const dm = Math.min(...pcs[me].map(c => dist(c, t)));
-    const dop = Math.min(...pcs[op].map(c => dist(c, t)));
-    if (dm < dop) v += 6; else if (dop < dm) v -= 6;
-    v -= dm * 0.5;
+  let v = 30 * (held(pcs, me) - held(pcs, op)) + 25 * (pcs[me].length - pcs[op].length);
+  const am = arrivals(pcs, me), ao = arrivals(pcs, op);
+  let mine = 0, theirs = 0;
+  for (let i = 0; i < TARGETS.length; i++) {
+    if (am[i] < ao[i]) { mine++; v += 14; }
+    else if (ao[i] < am[i]) { theirs++; v -= 14; }
   }
-  // Lone pieces next to enemy groups are at risk
-  for (const c of pcs[me]) {
-    const friends = pcs[me].filter(x => x !== c && dist(x, c) === 1).length;
-    const enemies = pcs[op].filter(x => dist(x, c) <= 2).length;
-    v -= 3 * Math.max(0, enemies - 1 - friends);
-  }
+  if (mine >= TO_WIN) v += 40;
+  if (theirs >= TO_WIN) v -= 40;
+  // The sooner the three nearest targets can be reached, the better
+  const speed = arr => arr.slice().sort((a, b) => a - b).slice(0, TO_WIN).reduce((s, d) => s + Math.min(d, 12), 0);
+  v += 3 * (speed(ao) - speed(am));
+  v += 15 * (threatened(pcs, op) - threatened(pcs, me));
   return v;
 }
 
@@ -269,6 +296,38 @@ function samplePlan(pcs, p, temp) {
   return new Set(plan).size === plan.length ? plan : null;
 }
 
+// Each piece gets its own goal (a target, sometimes an enemy piece or holding still) and steps toward it
+function assignedPlan(pcs, p) {
+  const mine = pcs[p], foes = pcs[1 - p];
+  const pairs = [];
+  mine.forEach((c, k) => TARGETS.forEach(t => pairs.push([dist(c, t) + Math.random() * 3, k, t])));
+  pairs.sort((a, b) => a[0] - b[0]);
+  const goal = mine.map(() => -1), usedT = new Set();
+  for (const [, k, t] of pairs) {
+    if (goal[k] >= 0 || usedT.has(t)) continue;
+    goal[k] = t;
+    usedT.add(t);
+  }
+  const taken = new Set(), plan = [];
+  for (let k = 0; k < mine.length; k++) {
+    const c = mine[k], r = Math.random();
+    let g = goal[k];
+    if (r < 0.12 && foes.length) g = foes[Math.floor(Math.random() * foes.length)];
+    else if (r < 0.2) g = c;
+    let bd = Infinity, cands = [];
+    for (const d of STEPS[c]) {
+      if (taken.has(d) || mine.some((x, j) => j > k && x === d)) continue; // later pieces may still stay put
+      const x = dist(d, g);
+      if (x < bd) { bd = x; cands = [d]; } else if (x === bd) cands.push(d);
+    }
+    if (!cands.length) return null;
+    const d = cands[Math.floor(Math.random() * cands.length)];
+    taken.add(d);
+    plan.push(d);
+  }
+  return plan;
+}
+
 function genPlans(pcs, p, count) {
   const plans = [], keys = new Set();
   const add = pl => {
@@ -279,7 +338,9 @@ function genPlans(pcs, p, count) {
   };
   add(pcs[p].slice());
   add(samplePlan(pcs, p, 0));
-  for (let t = 0; t < count * 8 && plans.length < count; t++) add(samplePlan(pcs, p, 1.2));
+  for (let t = 0; t < count * 8 && plans.length < count; t++) {
+    add(t % 4 === 3 ? samplePlan(pcs, p, 1.2) : assignedPlan(pcs, p));
+  }
   return plans;
 }
 
@@ -312,7 +373,8 @@ function solve(M, iters) {
 
 function chooseAiOrders(me) {
   if (level === 'easy') {
-    return samplePlan(pieces, me, 2.5) || samplePlan(pieces, me, 0) || pieces[me].slice();
+    return (Math.random() < 0.3 ? samplePlan(pieces, me, 2.5) : assignedPlan(pieces, me)) ||
+      samplePlan(pieces, me, 0) || pieces[me].slice();
   }
   const [count, iters] = level === 'medium' ? [12, 300] : [36, 1500];
   const mine = genPlans(pieces, me, count), theirs = genPlans(pieces, 1 - me, count);
