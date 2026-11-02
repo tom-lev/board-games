@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>רץ משותף — Shared Runner</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #182033; --border: #33405f; --text: #e8ecf4; --muted: #8b96ad;
+    --p1: #4cc9f0; --p2: #f72585; --cell: #232d45; --cell-hover: #33416a; --accent: #ffd166;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; padding: 16px;
+    background: radial-gradient(circle at top, #1c2540, var(--bg) 70%);
+    color: var(--text); font-family: system-ui, "Segoe UI", Arial, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  h1 { margin: 8px 0 2px; font-size: 30px; }
+  .sub { color: var(--muted); margin-bottom: 14px; text-align: center; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 10px; }
+  select, button {
+    font: inherit; font-size: 15px; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: #1a1a1a; border: none; font-weight: 700; }
+  .score { display: flex; gap: 18px; color: var(--muted); margin-bottom: 4px; }
+  .score b { color: var(--text); }
+  .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; margin-inline-end: 4px; }
+  .groups { color: var(--muted); font-size: 15px; }
+  .groups b { color: var(--text); }
+  .status { font-size: 20px; min-height: 32px; margin: 6px 0 12px; text-align: center; }
+  .status.win { color: var(--accent); font-weight: 700; }
+  .board {
+    direction: ltr; display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px;
+    width: min(92vw, 490px); aspect-ratio: 1; background: var(--panel); padding: 8px; border-radius: 14px;
+    box-shadow: 0 10px 30px #0008;
+  }
+  .cell {
+    border-radius: 7px; background: var(--cell); display: flex; align-items: center; justify-content: center;
+    transition: background .25s, opacity .25s, box-shadow .25s;
+  }
+  .cell.own1 { background: #2a7fa0; }
+  .cell.own2 { background: #a3205e; }
+  .cell.done.own1:not(.best), .cell.done.own2:not(.best) { opacity: .45; }
+  .cell.best { box-shadow: inset 0 0 0 3px var(--accent); }
+  .cell.legal { cursor: pointer; outline: 2px dashed var(--accent); outline-offset: -5px; }
+  .cell.legal:hover { background: var(--cell-hover); }
+  .runner {
+    width: 64%; height: 64%; border-radius: 50%; background: var(--accent); animation: pop .2s ease-out;
+    box-shadow: 0 4px 10px #0009, inset 0 -5px 0 #0003;
+  }
+  @keyframes pop { from { transform: scale(.6); } to { transform: scale(1); } }
+  .rules {
+    max-width: 520px; margin-top: 20px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 18px; line-height: 1.6; color: #cdd5e5;
+  }
+  .rules h2 { margin: 4px 0; font-size: 18px; color: var(--text); }
+  .rules ul { margin: 6px 0; padding-inline-start: 20px; }
+  a.back { color: var(--muted); margin-top: 14px; }
+</style>
+</head>
+<body>
+  <h1>רץ משותף</h1>
+  <div class="sub">Shared Runner · כלי אחד לשניכם, והשביל נצבע בצבע של מי שהזיז</div>
+
+  <div class="controls">
+    <select id="mode">
+      <option value="ai">נגד המחשב</option>
+      <option value="pvp">שני שחקנים</option>
+    </select>
+    <select id="level">
+      <option value="easy">קל</option>
+      <option value="medium" selected>בינוני</option>
+      <option value="hard">קשה</option>
+    </select>
+    <select id="starter">
+      <option value="alt">פותחים לסירוגין</option>
+      <option value="0">כחול מתחיל</option>
+      <option value="1">ורוד מתחיל</option>
+    </select>
+    <button class="primary" id="newGame">משחק חדש</button>
+  </div>
+
+  <div class="score">
+    <span><span class="dot" style="background:var(--p1)"></span><span id="name0">אתה</span>: <b id="score0">0</b></span>
+    <span><span class="dot" style="background:var(--p2)"></span><span id="name1">מחשב</span>: <b id="score1">0</b></span>
+  </div>
+  <div class="groups" id="groups"></div>
+  <div class="status" id="status"></div>
+  <div class="board" id="board"></div>
+
+  <div class="rules">
+    <h2>חוקים</h2>
+    <ul>
+      <li>על לוח 7×7 יש כלי צהוב אחד שמשותף לשני השחקנים. הוא מתחיל במרכז.</li>
+      <li>בתורך מזיזים את הכלי בקו ישר או באלכסון, כמה משבצות שרוצים.</li>
+      <li>המשבצת שהכלי עזב נצבעת בצבע שלך. אי אפשר לעבור דרך משבצת צבועה או לנחות עליה.</li>
+      <li>כשלכלי אין לאן לזוז, המשחק נגמר. מנצח מי שיש לו את הקבוצה המחוברת הגדולה ביותר (משבצות שנוגעות בצלע, לא באלכסון).</li>
+      <li>בשוויון מכריע מספר המשבצות הכולל, ואם גם הוא שווה, זה תיקו.</li>
+    </ul>
+  </div>
+  <a class="back" href="../index.html">← חזרה לרשימת המשחקים</a>
+
+<script>
+const N = 7, SIZE = N * N, CENTER = 24;
+const DIRS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+const ORTHO = [];
+for (let i = 0; i < SIZE; i++) {
+  const r = Math.floor(i / N), c = i % N, list = [];
+  if (r > 0) list.push(i - N);
+  if (r < N - 1) list.push(i + N);
+  if (c > 0) list.push(i - 1);
+  if (c < N - 1) list.push(i + 1);
+  ORTHO.push(list);
+}
+// RAYS[i]: for each direction, the cells along that line from i outward
+const RAYS = [];
+for (let i = 0; i < SIZE; i++) {
+  const r = Math.floor(i / N), c = i % N, rays = [];
+  for (const [dr, dc] of DIRS) {
+    const ray = [];
+    for (let nr = r + dr, nc = c + dc; nr >= 0 && nr < N && nc >= 0 && nc < N; nr += dr, nc += dc) ray.push(nr * N + nc);
+    if (ray.length) rays.push(ray);
+  }
+  RAYS.push(rays);
+}
+const COLORS = ['כחול', 'ורוד'];
+
+// owner[i]: 0 = free, 1/2 = painted by player 0/1
+let owner, runner, turn, over, mode, level, aiBusy = false, gameId = 0;
+let altStarter = 0;
+const score = [0, 0];
+
+function legalMoves(owner, runner) {
+  const res = [];
+  for (const ray of RAYS[runner]) {
+    for (const j of ray) {
+      if (owner[j]) break;
+      res.push(j);
+    }
+  }
+  return res;
+}
+
+// Returns {largest, total, cells} for player p; cells = members of one largest group
+const seen = new Uint8Array(SIZE);
+function groupInfo(owner, p) {
+  const v = p + 1;
+  seen.fill(0);
+  let largest = 0, total = 0, bestStart = -1;
+  const stack = [];
+  for (let i = 0; i < SIZE; i++) {
+    if (owner[i] !== v || seen[i]) continue;
+    let size = 0;
+    stack.push(i); seen[i] = 1;
+    while (stack.length) {
+      const cur = stack.pop();
+      size++;
+      for (const n of ORTHO[cur]) if (owner[n] === v && !seen[n]) { seen[n] = 1; stack.push(n); }
+    }
+    total += size;
+    if (size > largest) { largest = size; bestStart = i; }
+  }
+  return { largest, total, bestStart };
+}
+
+function groupCells(owner, start) {
+  const v = owner[start], out = new Set([start]), stack = [start];
+  while (stack.length) {
+    const cur = stack.pop();
+    for (const n of ORTHO[cur]) if (owner[n] === v && !out.has(n)) { out.add(n); stack.push(n); }
+  }
+  return out;
+}
+
+// +1 if p wins the finished game, -1 if p loses, 0 for a draw
+function result(owner, p) {
+  const a = groupInfo(owner, p), b = groupInfo(owner, 1 - p);
+  if (a.largest !== b.largest) return a.largest > b.largest ? 1 : -1;
+  if (a.total !== b.total) return a.total > b.total ? 1 : -1;
+  return 0;
+}
+
+// ---------- AI ----------
+const TIMEOUT = {};
+let deadline = Infinity, nodes = 0;
+
+// Score from the point of view of p, who is about to move.
+function evaluate(owner, runner, p) {
+  const a = groupInfo(owner, p), b = groupInfo(owner, 1 - p);
+  return (a.largest - b.largest) * 10 + (a.total - b.total) * 3;
+}
+
+function negamax(owner, runner, p, depth, alpha, beta, ply) {
+  if ((++nodes & 1023) === 0 && performance.now() > deadline) throw TIMEOUT;
+  const moves = legalMoves(owner, runner);
+  if (moves.length === 0) return result(owner, p) * (10000 - ply);
+  if (depth === 0) return evaluate(owner, runner, p);
+  let best = -Infinity;
+  for (const m of moves) {
+    owner[runner] = p + 1;
+    const v = -negamax(owner, m, 1 - p, depth - 1, -beta, -alpha, ply + 1);
+    owner[runner] = 0;
+    if (v > best) best = v;
+    if (v > alpha) alpha = v;
+    if (alpha >= beta) break;
+  }
+  return best;
+}
+
+function searchRoot(p, maxDepth, timeMs) {
+  const o = owner.slice();
+  let moves = legalMoves(o, runner).sort(() => Math.random() - 0.5);
+  let bestMove = moves[0];
+  deadline = performance.now() + timeMs;
+  nodes = 0;
+  for (let depth = 1; depth <= maxDepth; depth++) {
+    try {
+      const scored = [];
+      let alpha = -Infinity;
+      for (const m of moves) {
+        o[runner] = p + 1;
+        let v;
+        try { v = -negamax(o, m, 1 - p, depth - 1, -Infinity, -alpha, 1); }
+        finally { o[runner] = 0; }
+        scored.push([m, v]);
+        if (v > alpha) alpha = v;
+      }
+      scored.sort((a, c) => c[1] - a[1]);
+      moves = scored.map(s => s[0]);
+      bestMove = moves[0];
+      if (Math.abs(scored[0][1]) > 9000) break; // forced result found
+    } catch (e) {
+      if (e !== TIMEOUT) throw e;
+      break;
+    }
+  }
+  return bestMove;
+}
+
+function chooseAiMove(p) {
+  const moves = legalMoves(owner, runner);
+  if (level === 'easy') {
+    if (Math.random() < 0.4) return moves[Math.floor(Math.random() * moves.length)];
+    return searchRoot(p, 2, 300);
+  }
+  if (level === 'medium') return searchRoot(p, 3, 600);
+  return searchRoot(p, 40, 1500);
+}
+
+// ---------- Game flow ----------
+const boardEl = document.getElementById('board');
+const statusEl = document.getElementById('status');
+const cells = [];
+for (let i = 0; i < SIZE; i++) {
+  const d = document.createElement('div');
+  d.className = 'cell';
+  d.addEventListener('click', () => onCellClick(i));
+  boardEl.appendChild(d);
+  cells.push(d);
+}
+
+function isAi(p) { return mode === 'ai' && p === 1; }
+
+function newGame() {
+  gameId++;
+  mode = document.getElementById('mode').value;
+  level = document.getElementById('level').value;
+  document.getElementById('level').disabled = mode !== 'ai';
+  document.getElementById('name0').textContent = mode === 'ai' ? 'אתה' : 'כחול';
+  document.getElementById('name1').textContent = mode === 'ai' ? 'מחשב' : 'ורוד';
+  owner = new Uint8Array(SIZE);
+  runner = CENTER;
+  const starter = document.getElementById('starter').value;
+  if (starter === 'alt') { turn = altStarter; altStarter = 1 - altStarter; }
+  else turn = Number(starter);
+  over = false;
+  aiBusy = false;
+  nextTurn();
+}
+
+function nextTurn() {
+  if (legalMoves(owner, runner).length === 0) {
+    over = true;
+    const r = result(owner, 0);
+    let msg;
+    if (r === 0) msg = 'תיקו!';
+    else {
+      const winner = r > 0 ? 0 : 1;
+      score[winner]++;
+      document.getElementById('score' + winner).textContent = score[winner];
+      if (mode === 'ai') msg = winner === 0 ? '🏆 ניצחת! הקבוצה שלך הגדולה יותר' : 'המחשב ניצח עם קבוצה גדולה יותר';
+      else msg = `🏆 ${COLORS[winner]} ניצח!`;
+    }
+    render(true);
+    setStatus(msg, true);
+    return;
+  }
+  render(false);
+  if (isAi(turn)) {
+    setStatus('המחשב חושב…');
+    aiBusy = true;
+    const id = gameId;
+    setTimeout(() => {
+      if (id !== gameId) return;
+      const m = chooseAiMove(turn);
+      setTimeout(() => {
+        if (id !== gameId) return;
+        aiBusy = false;
+        makeMove(m);
+      }, 250);
+    }, 50);
+  } else {
+    setStatus(mode === 'ai' ? 'תורך: הזז את הכלי הצהוב' : `תור ה${COLORS[turn]}`);
+  }
+}
+
+function makeMove(to) {
+  owner[runner] = turn + 1;
+  runner = to;
+  turn = 1 - turn;
+  nextTurn();
+}
+
+function onCellClick(i) {
+  if (over || aiBusy || isAi(turn)) return;
+  if (legalMoves(owner, runner).includes(i)) makeMove(i);
+}
+
+function setStatus(text, win) {
+  statusEl.textContent = text;
+  statusEl.className = 'status' + (win ? ' win' : '');
+}
+
+function render(finished) {
+  const legal = (!finished && !isAi(turn)) ? legalMoves(owner, runner) : [];
+  const g = [groupInfo(owner, 0), groupInfo(owner, 1)];
+  let best = new Set();
+  if (finished) {
+    for (const x of g) if (x.bestStart >= 0) for (const c of groupCells(owner, x.bestStart)) best.add(c);
+  }
+  document.getElementById('groups').innerHTML =
+    `קבוצה גדולה: כחול <b>${g[0].largest}</b> · ורוד <b>${g[1].largest}</b>`;
+  for (let i = 0; i < SIZE; i++) {
+    const c = cells[i];
+    c.className = 'cell' + (owner[i] ? ' own' + owner[i] : '') + (legal.includes(i) ? ' legal' : '') +
+      (finished ? ' done' : '') + (best.has(i) ? ' best' : '');
+    if (i === runner) {
+      if (!c.firstChild) {
+        const piece = document.createElement('div');
+        piece.className = 'runner';
+        c.appendChild(piece);
+      }
+    } else if (c.firstChild) c.innerHTML = '';
+  }
+}
+
+document.getElementById('newGame').addEventListener('click', newGame);
+document.getElementById('mode').addEventListener('change', () => {
+  for (const k of Object.keys(score)) { score[k] = 0; document.getElementById('score' + k).textContent = 0; }
+  newGame();
+});
+newGame();
+</script>
+</body>
+</html>

@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>אור וצל — Light &amp; Shadow</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #182033; --border: #33405f; --text: #e8ecf4; --muted: #8b96ad;
+    --p1: #4cc9f0; --p2: #f72585; --cell: #232d45; --dark: #0b0f19; --accent: #ffd166;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; padding: 16px;
+    background: radial-gradient(circle at top, #1c2540, var(--bg) 70%);
+    color: var(--text); font-family: system-ui, "Segoe UI", Arial, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  h1 { margin: 8px 0 2px; font-size: 30px; }
+  .sub { color: var(--muted); margin-bottom: 14px; text-align: center; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 10px; }
+  select, button {
+    font: inherit; font-size: 15px; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: #1a1a1a; border: none; font-weight: 700; }
+  .score { display: flex; gap: 18px; color: var(--muted); margin-bottom: 4px; }
+  .score b { color: var(--text); }
+  .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; margin-inline-end: 4px; }
+  .live { color: var(--muted); font-size: 15px; text-align: center; }
+  .live b { color: var(--text); }
+  .status { font-size: 20px; min-height: 32px; margin: 6px 0 12px; text-align: center; }
+  .status.win { color: var(--accent); font-weight: 700; }
+  .board {
+    direction: ltr; display: grid; grid-template-columns: repeat(11, 1fr); gap: 3px;
+    width: min(94vw, 540px); aspect-ratio: 1; background: var(--panel); padding: 6px; border-radius: 14px;
+    box-shadow: 0 10px 30px #0008;
+  }
+  .cell {
+    border-radius: 4px; background: var(--dark); display: flex; align-items: center; justify-content: center;
+    transition: background .25s;
+  }
+  .cell.lit1 { background: #1f5a73; }
+  .cell.lit2 { background: #6d1d47; }
+  .cell.litTie { background: repeating-linear-gradient(45deg, #1f5a73 0 5px, #6d1d47 5px 10px); }
+  .cell.legal { cursor: pointer; }
+  .cell.legal:hover { outline: 2px solid var(--accent); outline-offset: -2px; background: #1a2236; }
+  .lamp {
+    width: 70%; height: 70%; border-radius: 50%; animation: pop .2s ease-out;
+  }
+  .lamp.p1 { background: var(--p1); box-shadow: 0 0 12px var(--p1); }
+  .lamp.p2 { background: var(--p2); box-shadow: 0 0 12px var(--p2); }
+  .lamp.last { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @keyframes pop { from { transform: scale(.4); } to { transform: scale(1); } }
+  .rules {
+    max-width: 540px; margin-top: 20px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 18px; line-height: 1.6; color: #cdd5e5;
+  }
+  .rules h2 { margin: 4px 0; font-size: 18px; color: var(--text); }
+  .rules ul { margin: 6px 0; padding-inline-start: 20px; }
+  a.back { color: var(--muted); margin-top: 14px; }
+</style>
+</head>
+<body>
+  <h1>אור וצל</h1>
+  <div class="sub">Light &amp; Shadow · מדליקים מנורות בחושך, וכל מנורה היא גם קיר</div>
+
+  <div class="controls">
+    <select id="mode">
+      <option value="ai">נגד המחשב</option>
+      <option value="pvp">שני שחקנים</option>
+    </select>
+    <select id="level">
+      <option value="easy">קל</option>
+      <option value="medium" selected>בינוני</option>
+      <option value="hard">קשה</option>
+    </select>
+    <select id="starter">
+      <option value="alt">פותחים לסירוגין</option>
+      <option value="0">כחול מתחיל</option>
+      <option value="1">ורוד מתחיל</option>
+    </select>
+    <button class="primary" id="newGame">משחק חדש</button>
+  </div>
+
+  <div class="score">
+    <span><span class="dot" style="background:var(--p1)"></span><span id="name0">אתה</span>: <b id="score0">0</b></span>
+    <span><span class="dot" style="background:var(--p2)"></span><span id="name1">מחשב</span>: <b id="score1">0</b></span>
+  </div>
+  <div class="live" id="live"></div>
+  <div class="status" id="status"></div>
+  <div class="board" id="board"></div>
+
+  <div class="rules">
+    <h2>חוקים</h2>
+    <ul>
+      <li>בתורך מניחים מנורה בצבע שלך על משבצת <b>חשוכה</b> בלוח 11×11, כלומר משבצת שאף מנורה עוד לא מאירה.</li>
+      <li>מנורה מאירה עד 3 משבצות בכל אחד מארבעת הכיוונים (למעלה, למטה, ימינה, שמאלה). האור נעצר מוקדם יותר אם הוא נתקל במנורה אחרת, של כל אחד מהשחקנים. כל מנורה שכבר על הלוח היא קיר לאור שיבוא אחריה.</li>
+      <li>כשלא נשארו משבצות חשוכות, המשחק נגמר.</li>
+      <li>ניקוד: כל משבצת שמוארת על ידי יותר מנורות שלך משל היריב שווה נקודה. משבצת מפוספסת היא בשוויון ולא שייכת לאף אחד. המנורות עצמן לא שוות נקודות.</li>
+    </ul>
+  </div>
+  <a class="back" href="../index.html">← חזרה לרשימת המשחקים</a>
+
+<script>
+// RANGE 3 tested best in self-play: unlimited range plays like placing rooks (11 lamps, starter always wins)
+const N = 11, SIZE = N * N, RANGE = 3;
+const DIRS = [[-1,0],[1,0],[0,-1],[0,1]];
+// RAYS[i]: for each of the 4 directions, the cells within RANGE along that line from i outward
+const RAYS = [];
+for (let i = 0; i < SIZE; i++) {
+  const r = Math.floor(i / N), c = i % N, rays = [];
+  for (const [dr, dc] of DIRS) {
+    const ray = [];
+    for (let k = 1, nr = r + dr, nc = c + dc; k <= RANGE && nr >= 0 && nr < N && nc >= 0 && nc < N; k++, nr += dr, nc += dc) ray.push(nr * N + nc);
+    if (ray.length) rays.push(ray);
+  }
+  RAYS.push(rays);
+}
+const COLORS = ['כחול', 'ורוד'];
+
+// lamps[i]: 0 = empty, 1/2 = lamp of player 0/1
+let lamps, turn, over, mode, level, lastMove, aiBusy = false, gameId = 0;
+let altStarter = 0;
+const score = [0, 0];
+
+// cnt[p][i] = how many of p's lamps light cell i
+function light(lamps) {
+  const cnt = [new Uint8Array(SIZE), new Uint8Array(SIZE)];
+  for (let i = 0; i < SIZE; i++) {
+    if (!lamps[i]) continue;
+    const arr = cnt[lamps[i] - 1];
+    for (const ray of RAYS[i]) {
+      for (const j of ray) {
+        if (lamps[j]) break;
+        arr[j]++;
+      }
+    }
+  }
+  return cnt;
+}
+
+// Lamps themselves score nothing: only lit cells count
+function points(lamps, cnt, p) {
+  const mine = cnt[p], theirs = cnt[1 - p];
+  let s = 0;
+  for (let i = 0; i < SIZE; i++) if (!lamps[i] && mine[i] > theirs[i]) s++;
+  return s;
+}
+
+// Dark cells: no lamp and nobody lights them. Same for both players.
+function legalMoves(lamps, cnt) {
+  const res = [];
+  for (let i = 0; i < SIZE; i++) if (!lamps[i] && !cnt[0][i] && !cnt[1][i]) res.push(i);
+  return res;
+}
+
+// ---------- AI ----------
+const TIMEOUT = {};
+let deadline = Infinity, nodes = 0;
+
+// Score from the point of view of p, who is about to move.
+function evaluate(lamps, cnt, p) {
+  return points(lamps, cnt, p) - points(lamps, cnt, 1 - p);
+}
+
+function finalValue(lamps, cnt, p, ply) {
+  const diff = evaluate(lamps, cnt, p);
+  return Math.sign(diff) * (10000 - ply) + diff;
+}
+
+// Moves for p sorted best-first by a one-ply look, cut to `width`
+function orderedMoves(lamps, cnt, p, width) {
+  const scored = legalMoves(lamps, cnt).map(m => {
+    lamps[m] = p + 1;
+    const v = evaluate(lamps, light(lamps), p) + Math.random() * 0.01;
+    lamps[m] = 0;
+    return [m, v];
+  });
+  scored.sort((a, b) => b[1] - a[1]);
+  return scored.slice(0, width).map(s => s[0]);
+}
+
+function negamax(lamps, p, depth, alpha, beta, ply, width) {
+  if ((++nodes & 127) === 0 && performance.now() > deadline) throw TIMEOUT;
+  const cnt = light(lamps);
+  if (depth === 0) {
+    return legalMoves(lamps, cnt).length ? evaluate(lamps, cnt, p) : finalValue(lamps, cnt, p, ply);
+  }
+  const moves = orderedMoves(lamps, cnt, p, width);
+  if (moves.length === 0) return finalValue(lamps, cnt, p, ply);
+  let best = -Infinity;
+  for (const m of moves) {
+    lamps[m] = p + 1;
+    const v = -negamax(lamps, 1 - p, depth - 1, -beta, -alpha, ply + 1, width);
+    lamps[m] = 0;
+    if (v > best) best = v;
+    if (v > alpha) alpha = v;
+    if (alpha >= beta) break;
+  }
+  return best;
+}
+
+function searchRoot(p, maxDepth, timeMs, width) {
+  const l = lamps.slice();
+  let moves = orderedMoves(l, light(l), p, width * 2);
+  let bestMove = moves[0];
+  deadline = performance.now() + timeMs;
+  nodes = 0;
+  for (let depth = 1; depth <= maxDepth; depth++) {
+    try {
+      const scored = [];
+      let alpha = -Infinity;
+      for (const m of moves) {
+        l[m] = p + 1;
+        let v;
+        try { v = -negamax(l, 1 - p, depth - 1, -Infinity, -alpha, 1, width); }
+        finally { l[m] = 0; }
+        scored.push([m, v]);
+        if (v > alpha) alpha = v;
+      }
+      scored.sort((a, c) => c[1] - a[1]);
+      moves = scored.map(s => s[0]);
+      bestMove = moves[0];
+      if (Math.abs(scored[0][1]) > 9000) break; // forced result found
+    } catch (e) {
+      if (e !== TIMEOUT) throw e;
+      break;
+    }
+  }
+  return bestMove;
+}
+
+function chooseAiMove(p) {
+  if (level === 'easy') {
+    const moves = legalMoves(lamps, light(lamps));
+    if (Math.random() < 0.4) return moves[Math.floor(Math.random() * moves.length)];
+    return searchRoot(p, 1, 300, 12);
+  }
+  if (level === 'medium') return searchRoot(p, 2, 700, 8);
+  return searchRoot(p, 12, 1500, 10);
+}
+
+// ---------- Game flow ----------
+const boardEl = document.getElementById('board');
+const statusEl = document.getElementById('status');
+const cells = [];
+for (let i = 0; i < SIZE; i++) {
+  const d = document.createElement('div');
+  d.className = 'cell';
+  d.addEventListener('click', () => onCellClick(i));
+  boardEl.appendChild(d);
+  cells.push(d);
+}
+
+function isAi(p) { return mode === 'ai' && p === 1; }
+
+function newGame() {
+  gameId++;
+  mode = document.getElementById('mode').value;
+  level = document.getElementById('level').value;
+  document.getElementById('level').disabled = mode !== 'ai';
+  document.getElementById('name0').textContent = mode === 'ai' ? 'אתה' : 'כחול';
+  document.getElementById('name1').textContent = mode === 'ai' ? 'מחשב' : 'ורוד';
+  lamps = new Uint8Array(SIZE);
+  lastMove = -1;
+  const starter = document.getElementById('starter').value;
+  if (starter === 'alt') { turn = altStarter; altStarter = 1 - altStarter; }
+  else turn = Number(starter);
+  over = false;
+  aiBusy = false;
+  nextTurn();
+}
+
+function nextTurn() {
+  const cnt = light(lamps);
+  if (legalMoves(lamps, cnt).length === 0) return finish(cnt);
+  render(false);
+  if (isAi(turn)) {
+    setStatus('המחשב חושב…');
+    aiBusy = true;
+    const id = gameId;
+    setTimeout(() => {
+      if (id !== gameId) return;
+      const m = chooseAiMove(turn);
+      setTimeout(() => {
+        if (id !== gameId) return;
+        aiBusy = false;
+        makeMove(m);
+      }, 200);
+    }, 50);
+  } else {
+    setStatus(mode === 'ai' ? 'תורך: הנח מנורה במשבצת חשוכה' : `תור ה${COLORS[turn]}`);
+  }
+}
+
+function finish(cnt) {
+  over = true;
+  const a = points(lamps, cnt, 0), b = points(lamps, cnt, 1);
+  render(true);
+  let msg;
+  if (a === b) msg = `תיקו ${a}–${b}`;
+  else {
+    const winner = a > b ? 0 : 1;
+    score[winner]++;
+    document.getElementById('score' + winner).textContent = score[winner];
+    const res = `${Math.max(a, b)}–${Math.min(a, b)}`;
+    if (mode === 'ai') msg = winner === 0 ? `🏆 ניצחת ${res}!` : `המחשב ניצח ${res}`;
+    else msg = `🏆 ${COLORS[winner]} ניצח ${res}!`;
+  }
+  setStatus(msg, true);
+}
+
+function makeMove(i) {
+  lamps[i] = turn + 1;
+  lastMove = i;
+  turn = 1 - turn;
+  nextTurn();
+}
+
+function onCellClick(i) {
+  if (over || aiBusy || isAi(turn)) return;
+  if (legalMoves(lamps, light(lamps)).includes(i)) makeMove(i);
+}
+
+function setStatus(text, win) {
+  statusEl.textContent = text;
+  statusEl.className = 'status' + (win ? ' win' : '');
+}
+
+function render(finished) {
+  const cnt = light(lamps);
+  const human = !finished && !isAi(turn);
+  const dark = legalMoves(lamps, cnt);
+  const legal = new Set(human ? dark : []);
+  document.getElementById('live').innerHTML =
+    `נקודות: כחול <b>${points(lamps, cnt, 0)}</b> · ורוד <b>${points(lamps, cnt, 1)}</b> · משבצות חשוכות: <b>${dark.length}</b>`;
+  for (let i = 0; i < SIZE; i++) {
+    const c = cells[i];
+    let cls = 'cell';
+    if (!lamps[i]) {
+      if (cnt[0][i] > cnt[1][i]) cls += ' lit1';
+      else if (cnt[1][i] > cnt[0][i]) cls += ' lit2';
+      else if (cnt[0][i]) cls += ' litTie';
+      if (legal.has(i)) cls += ' legal';
+    }
+    c.className = cls;
+    const want = lamps[i] ? `lamp p${lamps[i]}` + (i === lastMove ? ' last' : '') : '';
+    const cur = c.firstChild;
+    if (!want) { if (cur) c.innerHTML = ''; continue; }
+    if (cur && cur.className.replace(' last', '') === want.replace(' last', '')) { cur.className = want; continue; }
+    c.innerHTML = '';
+    const lamp = document.createElement('div');
+    lamp.className = want;
+    c.appendChild(lamp);
+  }
+}
+
+document.getElementById('newGame').addEventListener('click', newGame);
+document.getElementById('mode').addEventListener('change', () => {
+  for (const k of Object.keys(score)) { score[k] = 0; document.getElementById('score' + k).textContent = 0; }
+  newGame();
+});
+newGame();
+</script>
+</body>
+</html>

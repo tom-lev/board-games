@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>מכרז שורות — Bid Lines</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #182033; --border: #33405f; --text: #e8ecf4; --muted: #8b96ad;
+    --p1: #4cc9f0; --p2: #f72585; --cell: #232d45; --cell-hover: #33416a; --accent: #ffd166;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; padding: 16px;
+    background: radial-gradient(circle at top, #1c2540, var(--bg) 70%);
+    color: var(--text); font-family: system-ui, "Segoe UI", Arial, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  h1 { margin: 8px 0 2px; font-size: 30px; }
+  .sub { color: var(--muted); margin-bottom: 14px; text-align: center; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 10px; }
+  select, button, input {
+    font: inherit; font-size: 15px; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  }
+  button:disabled { opacity: .4; cursor: default; }
+  button.primary { background: var(--accent); color: #1a1a1a; border: none; font-weight: 700; }
+  .score { display: flex; gap: 18px; color: var(--muted); margin-bottom: 4px; }
+  .score b { color: var(--text); }
+  .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; margin-inline-end: 4px; }
+  .purses { display: flex; gap: 14px; margin: 6px 0; }
+  .purse {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 6px 14px;
+    display: flex; align-items: center; gap: 8px; min-width: 130px; justify-content: center;
+  }
+  .purse b { font-size: 22px; }
+  .purse.p1 { border-color: #4cc9f066; }
+  .purse.p2 { border-color: #f7258566; }
+  .token { font-size: 13px; color: var(--accent); }
+  .status { font-size: 20px; min-height: 32px; margin: 6px 0 4px; text-align: center; }
+  .status.win { color: var(--accent); font-weight: 700; }
+  .reveal { color: var(--muted); min-height: 24px; margin-bottom: 8px; text-align: center; }
+  .reveal b { color: var(--text); }
+  .board {
+    direction: ltr; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+    width: min(88vw, 380px); aspect-ratio: 1; background: var(--panel); padding: 8px; border-radius: 14px;
+    box-shadow: 0 10px 30px #0008;
+  }
+  .cell {
+    border-radius: 10px; background: var(--cell); display: flex; align-items: center; justify-content: center;
+    transition: background .2s, box-shadow .2s;
+  }
+  .cell.open { cursor: pointer; outline: 2px dashed var(--accent); outline-offset: -6px; }
+  .cell.open:hover { background: var(--cell-hover); }
+  .cell.winline { box-shadow: inset 0 0 0 3px var(--accent); }
+  .mark { width: 62%; height: 62%; border-radius: 50%; animation: pop .2s ease-out; box-shadow: 0 4px 10px #0009, inset 0 -5px 0 #0003; }
+  .mark.p1 { background: var(--p1); }
+  .mark.p2 { background: var(--p2); border-radius: 22%; transform: rotate(45deg) scale(.85); animation: none; }
+  @keyframes pop { from { transform: scale(.6); } to { transform: scale(1); } }
+  .bidbox {
+    display: flex; gap: 8px; align-items: center; justify-content: center; margin: 12px 0 0; flex-wrap: wrap;
+    min-height: 44px;
+  }
+  .bidbox input { width: 80px; text-align: center; font-size: 20px; cursor: text; }
+  .rules {
+    max-width: 520px; margin-top: 20px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 18px; line-height: 1.6; color: #cdd5e5;
+  }
+  .rules h2 { margin: 4px 0; font-size: 18px; color: var(--text); }
+  .rules ul { margin: 6px 0; padding-inline-start: 20px; }
+  a.back { color: var(--muted); margin-top: 14px; }
+</style>
+</head>
+<body>
+  <h1>מכרז שורות</h1>
+  <div class="sub">Bid Lines · כל משבצת עולה כסף, והשאלה היא כמה היא שווה</div>
+
+  <div class="controls">
+    <select id="mode">
+      <option value="ai">נגד המחשב</option>
+      <option value="pvp">שני שחקנים</option>
+    </select>
+    <select id="level">
+      <option value="easy">קל</option>
+      <option value="medium" selected>בינוני</option>
+      <option value="hard">קשה</option>
+    </select>
+    <button class="primary" id="newGame">משחק חדש</button>
+  </div>
+
+  <div class="score">
+    <span><span class="dot" style="background:var(--p1)"></span><span id="name0">אתה</span>: <b id="score0">0</b></span>
+    <span><span class="dot" style="background:var(--p2)"></span><span id="name1">מחשב</span>: <b id="score1">0</b></span>
+  </div>
+  <div class="purses">
+    <div class="purse p1"><span class="dot" style="background:var(--p1)"></span>🪙 <b id="coins0">30</b> <span class="token" id="token0"></span></div>
+    <div class="purse p2"><span class="dot" style="background:var(--p2)"></span>🪙 <b id="coins1">30</b> <span class="token" id="token1"></span></div>
+  </div>
+  <div class="status" id="status"></div>
+  <div class="reveal" id="reveal"></div>
+  <div class="board" id="board"></div>
+  <div class="bidbox" id="bidbox">
+    <button id="minus">−</button>
+    <input id="bid" type="number" min="0" value="0" inputmode="numeric">
+    <button id="plus">+</button>
+    <button class="primary" id="submit">הגש הצעה</button>
+  </div>
+
+  <div class="rules">
+    <h2>חוקים</h2>
+    <ul>
+      <li>לכל שחקן 30 מטבעות לכל המשחק, ולוח 4×4 משותף.</li>
+      <li>בכל סיבוב שני השחקנים מציעים בסתר כמה מטבעות הם מוכנים לשלם.</li>
+      <li>מי שהציע יותר משלם את ההצעה שלו ובוחר משבצת. המפסיד לא משלם כלום.</li>
+      <li>בתיקו מנצח מי שמחזיק ב⭐ (יתרון התיקו), ואז ה⭐ עובר ליריב. בתחילת כל משחק ה⭐ אצל שחקן אחר.</li>
+      <li>מי שמשלים ראשון 3 בשורה (אופקית, אנכית או באלכסון) מנצח. לוח מלא בלי שורה הוא תיקו.</li>
+    </ul>
+  </div>
+  <a class="back" href="../index.html">← חזרה לרשימת המשחקים</a>
+
+<script>
+const N = 4, SIZE = N * N, START_COINS = 30;
+const LINES = [];
+for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+  for (const [dr, dc] of [[0,1],[1,0],[1,1],[1,-1]]) {
+    const er = r + 2 * dr, ec = c + 2 * dc;
+    if (er < 0 || er >= N || ec < 0 || ec >= N) continue;
+    LINES.push([r * N + c, (r + dr) * N + c + dc, er * N + ec]);
+  }
+}
+const COLORS = ['כחול', 'ורוד'];
+
+// board[i]: 0 = empty, 1/2 = player 0/1
+let board, coins, token, phase, bids, bidder, placer, over, mode, level, aiBusy = false, gameId = 0;
+let altToken = 0;
+const score = [0, 0];
+// Hard AI: how the opponent's bids compared with what the AI predicted
+let bidHistory = [];
+
+function winLine(b) {
+  for (const l of LINES) if (b[l[0]] && b[l[0]] === b[l[1]] && b[l[0]] === b[l[2]]) return l;
+  return null;
+}
+
+function winningCells(b, p) {
+  const v = p + 1, out = new Set();
+  for (const l of LINES) {
+    let mine = 0, empty = -1, other = false;
+    for (const i of l) {
+      if (b[i] === v) mine++;
+      else if (b[i] === 0) empty = i;
+      else other = true;
+    }
+    if (!other && mine === 2 && empty >= 0) out.add(empty);
+  }
+  return [...out];
+}
+
+function anyLineOpen(b) {
+  return LINES.some(l => !(l.some(i => b[i] === 1) && l.some(i => b[i] === 2)));
+}
+
+// p wins the next bid for sure by bidding everything
+function canForce(c, tok, p) { return c[p] > c[1 - p] || (c[p] === c[1 - p] && tok === p); }
+
+// ---------- AI ----------
+// Value in [-1, 1] for `me`, at the start of a bidding round
+function value(b, c, tok, me) {
+  const op = 1 - me, w = winLine(b);
+  if (w) return b[w[0]] === me + 1 ? 1 : -1;
+  if (!b.includes(0) || !anyLineOpen(b)) return 0;
+  const myW = winningCells(b, me).length, opW = winningCells(b, op).length;
+  if (myW && canForce(c, tok, me)) return 0.95;
+  if (opW && canForce(c, tok, op)) return -0.95;
+  let lines = 0;
+  for (const l of LINES) {
+    let m = 0, o = 0;
+    for (const i of l) { if (b[i] === me + 1) m++; else if (b[i] === op + 1) o++; }
+    if (m && !o) lines += m * m;
+    if (o && !m) lines -= o * o;
+  }
+  let v = lines / 24 + (c[me] - c[op]) / 40;
+  if (myW >= 2) v += 0.35; else if (myW) v += 0.15;
+  if (opW >= 2) v -= 0.35; else if (opW) v -= 0.15;
+  return Math.max(-0.85, Math.min(0.85, v));
+}
+
+// Best cell for p to take, and the resulting value for p
+function bestPlacement(b, c, tok, p) {
+  let best = -1, bestV = -Infinity;
+  for (let i = 0; i < SIZE; i++) {
+    if (b[i]) continue;
+    b[i] = p + 1;
+    const v = value(b, c, tok, p) + Math.random() * 0.001;
+    b[i] = 0;
+    if (v > bestV) { bestV = v; best = i; }
+  }
+  return [best, bestV];
+}
+
+// Value for `me` if `winner` takes this round paying `pay`
+function outcome(me, winner, pay, tokAfter) {
+  const c = coins.slice();
+  c[winner] -= pay;
+  const v = bestPlacement(board.slice(), c, tokAfter, winner)[1];
+  return winner === me ? v : -v;
+}
+
+// How much winning this round is worth to p (0 = nothing, 2 = everything)
+function stake(p) {
+  return outcome(p, p, 0, token) - outcome(p, 1 - p, 0, token);
+}
+
+function predictOpponentBid(op) {
+  const s = Math.max(0, stake(op));
+  let guess = coins[op] * Math.min(1, s * 0.6);
+  const known = bidHistory.filter(h => h.actual !== null);
+  if (level === 'hard' && known.length >= 2) {
+    const recent = known.slice(-6);
+    const bias = recent.reduce((a, h) => a + (h.actual - h.predicted), 0) / recent.length;
+    guess += bias;
+  }
+  return Math.max(0, Math.min(coins[op], guess));
+}
+
+function chooseAiBid(me) {
+  const op = 1 - me;
+  const maxBid = coins[me];
+  if (level === 'easy') {
+    const s = Math.max(0, stake(me));
+    return Math.min(maxBid, Math.round(maxBid * Math.min(1, s * 0.5) * Math.random() * 1.6));
+  }
+  const guess = predictOpponentBid(op);
+  const sigma = 1.5 + coins[op] * 0.12;
+  // Opponent bid distribution: a bell around the guess, plus a little uniform noise
+  const dist = [];
+  let total = 0;
+  for (let ob = 0; ob <= coins[op]; ob++) {
+    const pr = Math.exp(-((ob - guess) ** 2) / (2 * sigma * sigma)) + 0.02;
+    dist.push(pr); total += pr;
+  }
+  const winV = [], winTieV = [];
+  for (let b = 0; b <= maxBid; b++) {
+    winV.push(outcome(me, me, b, token));
+    winTieV.push(outcome(me, me, b, op));
+  }
+  const loseV = [], loseTieV = [];
+  for (let ob = 0; ob <= coins[op]; ob++) {
+    loseV.push(outcome(me, op, ob, token));
+    loseTieV.push(outcome(me, op, ob, me));
+  }
+  let best = 0, bestEv = -Infinity;
+  for (let b = 0; b <= maxBid; b++) {
+    let ev = 0;
+    for (let ob = 0; ob <= coins[op]; ob++) {
+      let v;
+      if (b > ob) v = winV[b];
+      else if (b < ob) v = loseV[ob];
+      else v = token === me ? winTieV[b] : loseTieV[ob];
+      ev += dist[ob] * v;
+    }
+    ev /= total;
+    if (level === 'medium') ev += (Math.random() - 0.5) * 0.04;
+    if (ev > bestEv + 1e-9) { bestEv = ev; best = b; }
+  }
+  if (level === 'hard') bidHistory.push({ predicted: guess, actual: null });
+  return best;
+}
+
+function chooseAiCell(me) { return bestPlacement(board.slice(), coins, token, me)[0]; }
+
+// ---------- Game flow ----------
+const boardEl = document.getElementById('board');
+const statusEl = document.getElementById('status');
+const revealEl = document.getElementById('reveal');
+const bidInput = document.getElementById('bid');
+const bidBox = document.getElementById('bidbox');
+const cells = [];
+for (let i = 0; i < SIZE; i++) {
+  const d = document.createElement('div');
+  d.className = 'cell';
+  d.addEventListener('click', () => onCellClick(i));
+  boardEl.appendChild(d);
+  cells.push(d);
+}
+
+function isAi(p) { return mode === 'ai' && p === 1; }
+function name(p) { return mode === 'ai' ? (p === 0 ? 'אתה' : 'המחשב') : COLORS[p]; }
+
+function newGame() {
+  gameId++;
+  mode = document.getElementById('mode').value;
+  level = document.getElementById('level').value;
+  document.getElementById('level').disabled = mode !== 'ai';
+  document.getElementById('name0').textContent = mode === 'ai' ? 'אתה' : 'כחול';
+  document.getElementById('name1').textContent = mode === 'ai' ? 'מחשב' : 'ורוד';
+  board = new Uint8Array(SIZE);
+  coins = [START_COINS, START_COINS];
+  token = altToken; altToken = 1 - altToken;
+  over = false;
+  aiBusy = false;
+  revealEl.textContent = '';
+  startBidding();
+}
+
+function startBidding() {
+  phase = 'bid';
+  bids = [null, null];
+  bidder = 0;
+  askBid();
+}
+
+function askBid() {
+  render();
+  bidInput.max = coins[bidder];
+  bidInput.value = Math.min(Number(bidInput.value) || 0, coins[bidder]);
+  if (mode === 'ai') setStatus('כמה אתה מציע על המשבצת הבאה?');
+  else setStatus(`${COLORS[bidder]}: הצע בסתר (ש${COLORS[1 - bidder]} לא יציץ)`);
+  bidInput.focus();
+}
+
+function submitBid() {
+  if (over || phase !== 'bid' || aiBusy) return;
+  const b = Math.floor(Number(bidInput.value));
+  if (!(b >= 0 && b <= coins[bidder])) { setStatus(`אפשר להציע בין 0 ל-${coins[bidder]}`); return; }
+  bids[bidder] = b;
+  if (mode === 'pvp' && bidder === 0) { bidder = 1; bidInput.value = 0; return askBid(); }
+  if (mode === 'ai') bids[1] = chooseAiBid(1);
+  bidInput.value = 0;
+  resolveBids();
+}
+
+function resolveBids() {
+  let winner, tie = false;
+  if (bids[0] !== bids[1]) winner = bids[0] > bids[1] ? 0 : 1;
+  else { winner = token; tie = true; }
+  if (mode === 'ai' && level === 'hard' && bidHistory.length && bidHistory[bidHistory.length - 1].actual === null) {
+    bidHistory[bidHistory.length - 1].actual = bids[0];
+  }
+  coins[winner] -= bids[winner];
+  let msg = `${COLORS[0]} הציע <b>${bids[0]}</b>, ${COLORS[1]} הציע <b>${bids[1]}</b>`;
+  if (mode === 'ai') msg = `הצעת <b>${bids[0]}</b>, המחשב הציע <b>${bids[1]}</b>`;
+  if (tie) { msg += ' · תיקו, ה⭐ מכריע'; token = 1 - token; }
+  revealEl.innerHTML = msg;
+  phase = 'place';
+  placer = winner;
+  render();
+  if (isAi(placer)) {
+    setStatus('המחשב בוחר משבצת…');
+    aiBusy = true;
+    const id = gameId;
+    setTimeout(() => {
+      if (id !== gameId) return;
+      aiBusy = false;
+      placeAt(chooseAiCell(placer));
+    }, 700);
+  } else {
+    setStatus(mode === 'ai' ? 'זכית! בחר משבצת' : `${COLORS[placer]} זכה, בחר משבצת`);
+  }
+}
+
+function placeAt(i) {
+  board[i] = placer + 1;
+  const w = winLine(board);
+  if (w) {
+    over = true;
+    score[placer]++;
+    document.getElementById('score' + placer).textContent = score[placer];
+    render(w);
+    if (mode === 'ai') setStatus(placer === 0 ? '🏆 ניצחת!' : 'המחשב השלים שורה וניצח', true);
+    else setStatus(`🏆 ${COLORS[placer]} ניצח!`, true);
+    return;
+  }
+  if (!board.includes(0) || !anyLineOpen(board)) {
+    over = true;
+    render();
+    setStatus('תיקו, אף אחד כבר לא יכול להשלים שורה', true);
+    return;
+  }
+  startBidding();
+}
+
+function onCellClick(i) {
+  if (over || aiBusy || phase !== 'place' || isAi(placer) || board[i]) return;
+  placeAt(i);
+}
+
+function setStatus(text, win) {
+  statusEl.textContent = text;
+  statusEl.className = 'status' + (win ? ' win' : '');
+}
+
+function render(winningLine) {
+  for (const p of [0, 1]) {
+    document.getElementById('coins' + p).textContent = coins[p];
+    document.getElementById('token' + p).textContent = token === p ? '⭐ תיקו' : '';
+  }
+  const open = !over && phase === 'place' && !isAi(placer);
+  for (let i = 0; i < SIZE; i++) {
+    const c = cells[i];
+    c.className = 'cell' + (open && !board[i] ? ' open' : '') + (winningLine && winningLine.includes(i) ? ' winline' : '');
+    const want = board[i] ? `mark p${board[i]}` : '';
+    const cur = c.firstChild;
+    if (!want) { if (cur) c.innerHTML = ''; continue; }
+    if (cur && cur.className === want) continue;
+    c.innerHTML = `<div class="${want}"></div>`;
+  }
+  const bidding = !over && phase === 'bid';
+  bidBox.style.visibility = bidding ? 'visible' : 'hidden';
+}
+
+function step(d) {
+  const v = Math.max(0, Math.min(coins[bidder], (Math.floor(Number(bidInput.value)) || 0) + d));
+  bidInput.value = v;
+}
+
+document.getElementById('minus').addEventListener('click', () => step(-1));
+document.getElementById('plus').addEventListener('click', () => step(1));
+document.getElementById('submit').addEventListener('click', submitBid);
+bidInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitBid(); });
+document.getElementById('newGame').addEventListener('click', newGame);
+document.getElementById('mode').addEventListener('change', () => {
+  for (const k of Object.keys(score)) { score[k] = 0; document.getElementById('score' + k).textContent = 0; }
+  bidHistory = [];
+  newGame();
+});
+newGame();
+</script>
+</body>
+</html>

@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>פקודות סודיות — Sealed Orders</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #182033; --border: #33405f; --text: #e8ecf4; --muted: #8b96ad;
+    --p1: #4cc9f0; --p2: #f72585; --cell: #232d45; --cell-hover: #33416a; --accent: #ffd166;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; padding: 16px;
+    background: radial-gradient(circle at top, #1c2540, var(--bg) 70%);
+    color: var(--text); font-family: system-ui, "Segoe UI", Arial, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  h1 { margin: 8px 0 2px; font-size: 30px; }
+  .sub { color: var(--muted); margin-bottom: 14px; text-align: center; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 10px; }
+  select, button {
+    font: inherit; font-size: 15px; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  }
+  button:disabled { opacity: .4; cursor: default; }
+  button.primary { background: var(--accent); color: #1a1a1a; border: none; font-weight: 700; }
+  .score { display: flex; gap: 18px; color: var(--muted); margin-bottom: 4px; }
+  .score b { color: var(--text); }
+  .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; margin-inline-end: 4px; }
+  .live { color: var(--muted); font-size: 15px; }
+  .live b { color: var(--text); }
+  .status { font-size: 20px; min-height: 32px; margin: 6px 0 4px; text-align: center; }
+  .status.win { color: var(--accent); font-weight: 700; }
+  .report { color: var(--muted); min-height: 22px; margin-bottom: 8px; text-align: center; font-size: 15px; }
+  .wrap { position: relative; width: min(94vw, 520px); aspect-ratio: 1; }
+  .board {
+    direction: ltr; display: grid; grid-template-columns: repeat(9, 1fr); grid-template-rows: repeat(9, 1fr);
+    position: absolute; inset: 0; background: var(--panel); padding: 8px; border-radius: 14px;
+    box-shadow: 0 10px 30px #0008;
+  }
+  .cell {
+    border: 2px solid var(--panel); border-radius: 8px; background: var(--cell);
+    display: flex; align-items: center; justify-content: center; position: relative;
+  }
+  .cell.target { background: #3a3220; }
+  .cell.target::before {
+    content: ''; position: absolute; width: 38%; height: 38%; transform: rotate(45deg);
+    border: 2px solid var(--accent); opacity: .6; border-radius: 3px;
+  }
+  .cell.target.held1 { background: #1d4a5e; }
+  .cell.target.held2 { background: #5a1a3c; }
+  .cell.option { cursor: pointer; outline: 2px dashed var(--accent); outline-offset: -5px; }
+  .cell.option:hover { background: var(--cell-hover); }
+  .cell.mine { cursor: pointer; }
+  .cell .boom { position: absolute; font-size: 18px; top: -4px; right: -2px; z-index: 2; }
+  .piece {
+    width: 66%; height: 66%; border-radius: 50%; z-index: 1;
+    box-shadow: 0 3px 8px #0009, inset 0 -4px 0 #0003;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; color: #0f1420; font-size: 14px;
+  }
+  .piece.p1 { background: var(--p1); }
+  .piece.p2 { background: var(--p2); }
+  .piece.sel { outline: 3px solid var(--accent); outline-offset: 2px; }
+  svg.arrows { position: absolute; inset: 8px; width: calc(100% - 16px); height: calc(100% - 16px); pointer-events: none; z-index: 3; }
+  .bar { display: flex; gap: 8px; margin-top: 12px; }
+  .rules {
+    max-width: 540px; margin-top: 20px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 18px; line-height: 1.6; color: #cdd5e5;
+  }
+  .rules h2 { margin: 4px 0; font-size: 18px; color: var(--text); }
+  .rules ul { margin: 6px 0; padding-inline-start: 20px; }
+  a.back { color: var(--muted); margin-top: 14px; }
+</style>
+</head>
+<body>
+  <h1>פקודות סודיות</h1>
+  <div class="sub">Sealed Orders · שני הצדדים זזים בבת אחת</div>
+
+  <div class="controls">
+    <select id="mode">
+      <option value="ai">נגד המחשב</option>
+      <option value="pvp">שני שחקנים</option>
+    </select>
+    <select id="level">
+      <option value="easy">קל</option>
+      <option value="medium" selected>בינוני</option>
+      <option value="hard">קשה</option>
+    </select>
+    <button class="primary" id="newGame">משחק חדש</button>
+  </div>
+
+  <div class="score">
+    <span><span class="dot" style="background:var(--p1)"></span><span id="name0">אתה</span>: <b id="score0">0</b></span>
+    <span><span class="dot" style="background:var(--p2)"></span><span id="name1">מחשב</span>: <b id="score1">0</b></span>
+  </div>
+  <div class="live" id="live"></div>
+  <div class="status" id="status"></div>
+  <div class="report" id="report"></div>
+  <div class="wrap">
+    <div class="board" id="board"></div>
+    <svg class="arrows" id="arrows" viewBox="0 0 9 9" preserveAspectRatio="none">
+      <defs>
+        <marker id="head1" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
+          <path d="M0 0L10 5L0 10z" fill="#4cc9f0"/>
+        </marker>
+        <marker id="head2" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
+          <path d="M0 0L10 5L0 10z" fill="#f72585"/>
+        </marker>
+      </defs>
+      <g id="arrowLayer"></g>
+    </svg>
+  </div>
+  <div class="bar">
+    <button id="clear">נקה פקודות</button>
+    <button class="primary" id="send">שלח פקודות</button>
+  </div>
+
+  <div class="rules">
+    <h2>חוקים</h2>
+    <ul>
+      <li>לכל שחקן 4 כלים על לוח 9×9 עם 5 משבצות מטרה (מעוינים).</li>
+      <li>בכל סיבוב כל שחקן נותן בסתר פקודה לכל כלי: להישאר, או לזוז משבצת אחת לכל כיוון (גם באלכסון). שני כלים שלך לא יכולים לסיים באותה משבצת.</li>
+      <li>אחרי ששני השחקנים שלחו, כל הכלים זזים בבת אחת.</li>
+      <li>אם כלי כחול וכלי ורוד מסיימים באותה משבצת, יש קרב. הכוח של כלי הוא 1, ועוד 1 על כל כלי חבר שמסיים צמוד אליו. החלש מוסר מהלוח, ובשוויון שניהם מוסרים.</li>
+      <li>מי שמחזיק 3 מטרות בסוף סיבוב מנצח. גם מי שמחסל את כל הכלים של היריב מנצח. אחרי 30 סיבובים מנצח מי שמחזיק יותר מטרות.</li>
+    </ul>
+    <h2>איך נותנים פקודות</h2>
+    <ul>
+      <li>לוחצים על כלי שלך ואז על משבצת מסומנת. לחיצה על הכלי עצמו פירושה "הישאר".</li>
+      <li>החצים הדהויים מראים את המהלכים של הסיבוב הקודם, ו💥 מסמן קרב.</li>
+    </ul>
+  </div>
+  <a class="back" href="../index.html">← חזרה לרשימת המשחקים</a>
+
+<script>
+const N = 9, SIZE = N * N, MAX_ROUNDS = 30, TO_WIN = 3;
+const TARGETS = [2 * N + 2, 2 * N + 6, 4 * N + 4, 6 * N + 2, 6 * N + 6];
+const IS_TARGET = new Uint8Array(SIZE);
+for (const t of TARGETS) IS_TARGET[t] = 1;
+const STEPS = [];
+for (let i = 0; i < SIZE; i++) {
+  const r = Math.floor(i / N), c = i % N, list = [];
+  for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+    const nr = r + dr, nc = c + dc;
+    if (nr >= 0 && nr < N && nc >= 0 && nc < N) list.push(nr * N + nc);
+  }
+  STEPS.push(list); // includes i itself (= stay)
+}
+function dist(a, b) {
+  return Math.max(Math.abs(Math.floor(a / N) - Math.floor(b / N)), Math.abs(a % N - b % N));
+}
+const COLORS = ['כחול', 'ורוד'];
+
+// pieces[p]: list of cells occupied by p's pieces
+let pieces, orders, lastOrders, battles, round, phase, selected, over, mode, level, aiBusy = false, gameId = 0;
+const score = [0, 0];
+
+// Moves everyone at once and fights the battles. Returns {pieces, battles}.
+function resolve(pcs, ord) {
+  const strength = [0, 1].map(p => ord[p].map((d, k) => {
+    let s = 1;
+    for (let j = 0; j < ord[p].length; j++) if (j !== k && dist(d, ord[p][j]) === 1) s++;
+    return s;
+  }));
+  const dead = [new Set(), new Set()], fights = [];
+  for (let a = 0; a < ord[0].length; a++) {
+    const b = ord[1].indexOf(ord[0][a]);
+    if (b < 0) continue;
+    fights.push(ord[0][a]);
+    const sa = strength[0][a], sb = strength[1][b];
+    if (sa <= sb) dead[0].add(a);
+    if (sb <= sa) dead[1].add(b);
+  }
+  return {
+    pieces: [0, 1].map(p => ord[p].filter((_, k) => !dead[p].has(k))),
+    battles: fights,
+  };
+}
+
+function held(pcs, p) { return pcs[p].filter(c => IS_TARGET[c]).length; }
+
+// 0/1 = that player won, 2 = draw, -1 = game goes on
+function outcome(pcs, roundNo) {
+  const alive = [pcs[0].length > 0, pcs[1].length > 0];
+  if (!alive[0] && !alive[1]) return 2;
+  if (!alive[0]) return 1;
+  if (!alive[1]) return 0;
+  const h = [held(pcs, 0), held(pcs, 1)];
+  if (h[0] >= TO_WIN) return 0;
+  if (h[1] >= TO_WIN) return 1;
+  if (roundNo >= MAX_ROUNDS) {
+    if (h[0] !== h[1]) return h[0] > h[1] ? 0 : 1;
+    if (pcs[0].length !== pcs[1].length) return pcs[0].length > pcs[1].length ? 0 : 1;
+    return 2;
+  }
+  return -1;
+}
+
+// ---------- AI ----------
+function evaluate(pcs, me, roundNo) {
+  const op = 1 - me, o = outcome(pcs, roundNo);
+  if (o === me) return 1000;
+  if (o === op) return -1000;
+  if (o === 2) return 0;
+  let v = 40 * (held(pcs, me) - held(pcs, op)) + 25 * (pcs[me].length - pcs[op].length);
+  for (const t of TARGETS) {
+    const dm = Math.min(...pcs[me].map(c => dist(c, t)));
+    const dop = Math.min(...pcs[op].map(c => dist(c, t)));
+    if (dm < dop) v += 6; else if (dop < dm) v -= 6;
+    v -= dm * 0.5;
+  }
+  // Lone pieces next to enemy groups are at risk
+  for (const c of pcs[me]) {
+    const friends = pcs[me].filter(x => x !== c && dist(x, c) === 1).length;
+    const enemies = pcs[op].filter(x => dist(x, c) <= 2).length;
+    v -= 3 * Math.max(0, enemies - 1 - friends);
+  }
+  return v;
+}
+
+// Heuristic appeal of moving p's piece k to cell d
+function moveScore(pcs, p, k, d) {
+  const op = 1 - p, mine = pcs[p];
+  let s = 0;
+  if (IS_TARGET[d]) s += 5;
+  let near = 99;
+  for (const t of TARGETS) {
+    if (mine.some((c, j) => j !== k && c === t)) continue;
+    near = Math.min(near, dist(d, t));
+  }
+  if (near < 99) s -= 1.5 * near;
+  const friends = mine.filter((c, j) => j !== k && dist(c, d) === 1).length;
+  const enemies = pcs[op].filter(c => dist(c, d) === 1).length;
+  s += Math.min(2, friends) - Math.max(0, enemies - friends);
+  if (pcs[op].includes(d)) {
+    const theirFriends = pcs[op].filter(c => c !== d && dist(c, d) === 1).length;
+    s += 1.5 * (friends - theirFriends);
+  }
+  return s;
+}
+
+function samplePlan(pcs, p, temp) {
+  const plan = pcs[p].map((c, k) => {
+    const opts = STEPS[c];
+    if (temp === 0) {
+      let best = c, bv = -Infinity;
+      for (const d of opts) { const v = moveScore(pcs, p, k, d); if (v > bv) { bv = v; best = d; } }
+      return best;
+    }
+    const w = opts.map(d => Math.exp(moveScore(pcs, p, k, d) / temp));
+    let x = Math.random() * w.reduce((a, b) => a + b, 0);
+    for (let i = 0; i < opts.length; i++) { x -= w[i]; if (x <= 0) return opts[i]; }
+    return opts[opts.length - 1];
+  });
+  // Two pieces may not end on the same cell: fall back to staying, else give up
+  for (let k = 0; k < plan.length; k++) {
+    if (plan.indexOf(plan[k]) === k) continue;
+    plan[k] = pcs[p][k];
+    if (plan.indexOf(plan[k]) !== k || plan.lastIndexOf(plan[k]) !== k) return null;
+  }
+  return new Set(plan).size === plan.length ? plan : null;
+}
+
+function genPlans(pcs, p, count) {
+  const plans = [], keys = new Set();
+  const add = pl => {
+    if (!pl) return;
+    const key = pl.join();
+    if (keys.has(key)) return;
+    keys.add(key); plans.push(pl);
+  };
+  add(pcs[p].slice());
+  add(samplePlan(pcs, p, 0));
+  for (let t = 0; t < count * 8 && plans.length < count; t++) add(samplePlan(pcs, p, 1.2));
+  return plans;
+}
+
+// Regret matching on the payoff matrix: returns the average mixed strategy for rows
+function solve(M, iters) {
+  const R = M.length, C = M[0].length;
+  const regR = new Float64Array(R), regC = new Float64Array(C), sumR = new Float64Array(R);
+  const sR = new Float64Array(R), sC = new Float64Array(C);
+  const strat = (reg, s) => {
+    let tot = 0;
+    for (let i = 0; i < reg.length; i++) tot += Math.max(0, reg[i]);
+    for (let i = 0; i < reg.length; i++) s[i] = tot > 0 ? Math.max(0, reg[i]) / tot : 1 / reg.length;
+  };
+  for (let t = 0; t < iters; t++) {
+    strat(regR, sR); strat(regC, sC);
+    const uR = new Float64Array(R), uC = new Float64Array(C);
+    for (let i = 0; i < R; i++) for (let j = 0; j < C; j++) {
+      uR[i] += sC[j] * M[i][j];
+      uC[j] -= sR[i] * M[i][j];
+    }
+    let evR = 0, evC = 0;
+    for (let i = 0; i < R; i++) evR += sR[i] * uR[i];
+    for (let j = 0; j < C; j++) evC += sC[j] * uC[j];
+    for (let i = 0; i < R; i++) { regR[i] = Math.max(0, regR[i] + uR[i] - evR); sumR[i] += sR[i]; }
+    for (let j = 0; j < C; j++) regC[j] = Math.max(0, regC[j] + uC[j] - evC);
+  }
+  const tot = sumR.reduce((a, b) => a + b, 0);
+  return Array.from(sumR, x => x / tot);
+}
+
+function chooseAiOrders(me) {
+  if (level === 'easy') {
+    return samplePlan(pieces, me, 2.5) || samplePlan(pieces, me, 0) || pieces[me].slice();
+  }
+  const [count, iters] = level === 'medium' ? [12, 300] : [36, 1500];
+  const mine = genPlans(pieces, me, count), theirs = genPlans(pieces, 1 - me, count);
+  const M = mine.map(a => theirs.map(b => {
+    const ord = me === 0 ? [a, b] : [b, a];
+    return evaluate(resolve(pieces, ord).pieces, me, round);
+  }));
+  const mix = solve(M, iters);
+  let x = Math.random();
+  for (let i = 0; i < mine.length; i++) { x -= mix[i]; if (x <= 0) return mine[i]; }
+  return mine[mine.length - 1];
+}
+
+// ---------- Game flow ----------
+const boardEl = document.getElementById('board');
+const statusEl = document.getElementById('status');
+const reportEl = document.getElementById('report');
+const arrowLayer = document.getElementById('arrowLayer');
+const sendBtn = document.getElementById('send');
+const clearBtn = document.getElementById('clear');
+const cells = [];
+for (let i = 0; i < SIZE; i++) {
+  const d = document.createElement('div');
+  d.className = 'cell' + (IS_TARGET[i] ? ' target' : '');
+  d.addEventListener('click', () => onCellClick(i));
+  boardEl.appendChild(d);
+  cells.push(d);
+}
+
+function isAi(p) { return mode === 'ai' && p === 1; }
+
+function newGame() {
+  gameId++;
+  mode = document.getElementById('mode').value;
+  level = document.getElementById('level').value;
+  document.getElementById('level').disabled = mode !== 'ai';
+  document.getElementById('name0').textContent = mode === 'ai' ? 'אתה' : 'כחול';
+  document.getElementById('name1').textContent = mode === 'ai' ? 'מחשב' : 'ורוד';
+  pieces = [[1, 3, 5, 7].map(c => (N - 1) * N + c), [1, 3, 5, 7]];
+  orders = [null, null];
+  lastOrders = null;
+  battles = [];
+  round = 1;
+  over = false;
+  aiBusy = false;
+  reportEl.textContent = '';
+  startOrders(0);
+}
+
+// phase = the player currently writing orders
+function startOrders(p) {
+  phase = p;
+  orders[p] = pieces[p].slice();
+  selected = -1;
+  render();
+  const who = mode === 'ai' ? 'תורך' : COLORS[p];
+  const hide = mode === 'pvp' ? ` (ש${COLORS[1 - p]} לא יציץ)` : '';
+  setStatus(`סיבוב ${round}: ${who}, תן פקודות${hide}`);
+}
+
+function onCellClick(i) {
+  if (over || aiBusy || isAi(phase)) return;
+  const mine = pieces[phase], ord = orders[phase];
+  const k = mine.indexOf(i);
+  if (selected >= 0) {
+    const legal = STEPS[mine[selected]].includes(i);
+    const takenBy = ord.findIndex((d, j) => j !== selected && d === i);
+    // Clicking a friendly piece selects it, unless it is leaving and the cell is a legal move
+    const friendLeaving = k >= 0 && k !== selected && ord[k] !== mine[k];
+    if (legal && takenBy < 0 && (k < 0 || k === selected || friendLeaving)) {
+      ord[selected] = i;
+      selected = -1;
+      return render();
+    }
+    if (legal && takenBy >= 0 && k < 0) {
+      setStatus('כבר יש כלי שלך שהולך לשם');
+      return;
+    }
+  }
+  if (k >= 0) { selected = k === selected ? -1 : k; render(); }
+}
+
+function sendOrders() {
+  if (over || aiBusy || isAi(phase)) return;
+  if (mode === 'pvp' && phase === 0) return startOrders(1);
+  if (mode === 'ai') {
+    aiBusy = true;
+    setStatus('המחשב כותב פקודות…');
+    render();
+    const id = gameId;
+    setTimeout(() => {
+      if (id !== gameId) return;
+      orders[1] = chooseAiOrders(1);
+      aiBusy = false;
+      runRound();
+    }, 50);
+    return;
+  }
+  runRound();
+}
+
+function runRound() {
+  const res = resolve(pieces, orders);
+  lastOrders = [0, 1].map(p => pieces[p].map((c, k) => [c, orders[p][k]]));
+  battles = res.battles;
+  const lost = [pieces[0].length - res.pieces[0].length, pieces[1].length - res.pieces[1].length];
+  pieces = res.pieces;
+  orders = [null, null];
+  let rep = battles.length ? `${battles.length} קרבות · ` : 'אין קרבות · ';
+  rep += `${COLORS[0]} איבד ${lost[0]}, ${COLORS[1]} איבד ${lost[1]}`;
+  reportEl.textContent = rep;
+  const o = outcome(pieces, round);
+  if (o >= 0) return finish(o);
+  round++;
+  startOrders(0);
+}
+
+function finish(o) {
+  over = true;
+  phase = -1;
+  render();
+  if (o === 2) return setStatus('תיקו!', true);
+  score[o]++;
+  document.getElementById('score' + o).textContent = score[o];
+  const wiped = pieces[1 - o].length === 0, n = held(pieces, o);
+  let msg;
+  if (mode === 'ai' && o === 0) msg = wiped ? '🏆 ניצחת! חיסלת את כל הכלים של המחשב' : `🏆 ניצחת עם ${n} מטרות!`;
+  else if (mode === 'ai') msg = wiped ? 'המחשב ניצח, הוא חיסל את כל הכלים שלך' : `המחשב ניצח עם ${n} מטרות`;
+  else msg = `🏆 ${COLORS[o]} ניצח` + (wiped ? ', כל הכלים של היריב חוסלו' : ` עם ${n} מטרות`);
+  setStatus(msg, true);
+}
+
+function setStatus(text, win) {
+  statusEl.textContent = text;
+  statusEl.className = 'status' + (win ? ' win' : '');
+}
+
+function arrow(from, to, p, faded) {
+  const x1 = from % N + 0.5, y1 = Math.floor(from / N) + 0.5, x2 = to % N + 0.5, y2 = Math.floor(to / N) + 0.5;
+  const len = Math.hypot(x2 - x1, y2 - y1), ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+  const color = p === 0 ? '#4cc9f0' : '#f72585';
+  return `<line x1="${x1 + ux * 0.25}" y1="${y1 + uy * 0.25}" x2="${x2 - ux * 0.22}" y2="${y2 - uy * 0.22}"
+    stroke="${color}" stroke-width="0.09" stroke-linecap="round" marker-end="url(#head${p + 1})"
+    ${faded ? 'opacity="0.35" stroke-dasharray="0.15 0.12"' : ''}/>`;
+}
+
+function render() {
+  const writing = phase >= 0 && !isAi(phase) && !over && !aiBusy;
+  const mine = writing ? pieces[phase] : [];
+  const options = writing && selected >= 0 ? STEPS[mine[selected]] : [];
+  const h = [held(pieces, 0), held(pieces, 1)];
+  document.getElementById('live').innerHTML =
+    `מטרות: כחול <b>${h[0]}</b> · ורוד <b>${h[1]}</b> · כלים: כחול <b>${pieces[0].length}</b> · ורוד <b>${pieces[1].length}</b>`;
+  for (let i = 0; i < SIZE; i++) {
+    const c = cells[i];
+    let cls = 'cell';
+    if (IS_TARGET[i]) {
+      cls += ' target';
+      if (pieces[0].includes(i)) cls += ' held1';
+      else if (pieces[1].includes(i)) cls += ' held2';
+    }
+    if (options.includes(i)) cls += ' option';
+    if (mine.includes(i)) cls += ' mine';
+    c.className = cls;
+    let html = '';
+    for (const p of [0, 1]) {
+      const k = pieces[p].indexOf(i);
+      if (k >= 0) html += `<div class="piece p${p + 1}${writing && p === phase && k === selected ? ' sel' : ''}"></div>`;
+    }
+    if (battles.includes(i)) html += '<span class="boom">💥</span>';
+    if (c.innerHTML !== html) c.innerHTML = html;
+  }
+  let svg = '';
+  if (lastOrders) for (const p of [0, 1]) for (const [a, b] of lastOrders[p]) if (a !== b) svg += arrow(a, b, p, true);
+  if (writing) orders[phase].forEach((d, k) => { if (d !== pieces[phase][k]) svg += arrow(pieces[phase][k], d, phase, false); });
+  arrowLayer.innerHTML = svg;
+  sendBtn.disabled = clearBtn.disabled = !writing;
+}
+
+sendBtn.addEventListener('click', sendOrders);
+clearBtn.addEventListener('click', () => {
+  if (phase < 0 || over || aiBusy || isAi(phase)) return;
+  orders[phase] = pieces[phase].slice();
+  selected = -1;
+  render();
+});
+document.getElementById('newGame').addEventListener('click', newGame);
+document.getElementById('mode').addEventListener('change', () => {
+  for (const k of Object.keys(score)) { score[k] = 0; document.getElementById('score' + k).textContent = 0; }
+  newGame();
+});
+newGame();
+</script>
+</body>
+</html>

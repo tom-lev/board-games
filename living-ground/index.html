@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>שטח חי — Living Ground</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #182033; --border: #33405f; --text: #e8ecf4; --muted: #8b96ad;
+    --p1: #4cc9f0; --p2: #f72585; --cell: #232d45; --cell-hover: #33416a; --accent: #ffd166;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; padding: 16px;
+    background: radial-gradient(circle at top, #1c2540, var(--bg) 70%);
+    color: var(--text); font-family: system-ui, "Segoe UI", Arial, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  h1 { margin: 8px 0 2px; font-size: 30px; }
+  .sub { color: var(--muted); margin-bottom: 14px; text-align: center; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 10px; }
+  select, button {
+    font: inherit; font-size: 15px; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: #1a1a1a; border: none; font-weight: 700; }
+  .score { display: flex; gap: 18px; color: var(--muted); margin-bottom: 4px; }
+  .score b { color: var(--text); }
+  .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; margin-inline-end: 4px; }
+  .live { color: var(--muted); font-size: 15px; }
+  .live b { color: var(--text); }
+  .status { font-size: 20px; min-height: 32px; margin: 6px 0 12px; text-align: center; }
+  .status.win { color: var(--accent); font-weight: 700; }
+  .board {
+    direction: ltr; display: grid; grid-template-columns: repeat(12, 1fr); gap: 3px;
+    width: min(94vw, 540px); aspect-ratio: 1; background: var(--panel); padding: 6px; border-radius: 14px;
+    box-shadow: 0 10px 30px #0008;
+  }
+  .cell {
+    border-radius: 4px; background: var(--cell); display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  .cell.open { cursor: pointer; }
+  .cell.open:hover { background: var(--cell-hover); }
+  .stone {
+    width: 82%; height: 82%; border-radius: 50%; box-shadow: 0 2px 5px #0009, inset 0 -3px 0 #0003;
+  }
+  .stone.p1 { background: var(--p1); }
+  .stone.p2 { background: var(--p2); }
+  .stone.fresh { animation: pop .25s ease-out; }
+  .stone.pending { outline: 2px dashed var(--accent); outline-offset: 1px; cursor: pointer; }
+  .stone.dying { opacity: .4; }
+  .born { width: 34%; height: 34%; border-radius: 50%; border: 2px solid; opacity: .8; }
+  .born.p1 { border-color: var(--p1); }
+  .born.p2 { border-color: var(--p2); }
+  @keyframes pop { from { transform: scale(.3); } to { transform: scale(1); } }
+  .legend { color: var(--muted); font-size: 14px; margin-top: 8px; text-align: center; }
+  .rules {
+    max-width: 540px; margin-top: 16px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 18px; line-height: 1.6; color: #cdd5e5;
+  }
+  .rules h2 { margin: 4px 0; font-size: 18px; color: var(--text); }
+  .rules ul { margin: 6px 0; padding-inline-start: 20px; }
+  a.back { color: var(--muted); margin-top: 14px; }
+</style>
+</head>
+<body>
+  <h1>שטח חי</h1>
+  <div class="sub">Living Ground · אתה זורע, והלוח מצמיח</div>
+
+  <div class="controls">
+    <select id="mode">
+      <option value="ai">נגד המחשב</option>
+      <option value="pvp">שני שחקנים</option>
+    </select>
+    <select id="level">
+      <option value="easy">קל</option>
+      <option value="medium" selected>בינוני</option>
+      <option value="hard">קשה</option>
+    </select>
+    <select id="starter">
+      <option value="alt">פותחים לסירוגין</option>
+      <option value="0">כחול מתחיל</option>
+      <option value="1">ורוד מתחיל</option>
+    </select>
+    <button class="primary" id="newGame">משחק חדש</button>
+  </div>
+
+  <div class="score">
+    <span><span class="dot" style="background:var(--p1)"></span><span id="name0">אתה</span>: <b id="score0">0</b></span>
+    <span><span class="dot" style="background:var(--p2)"></span><span id="name1">מחשב</span>: <b id="score1">0</b></span>
+  </div>
+  <div class="live" id="live"></div>
+  <div class="status" id="status"></div>
+  <div class="board" id="board"></div>
+  <div class="legend">טבעת ריקה = משבצת שתיוולד בסוף הסיבוב · אבן שקופה = אבן שתמות בסוף הסיבוב</div>
+
+  <div class="rules">
+    <h2>חוקים</h2>
+    <ul>
+      <li>המשחק נמשך 20 סיבובים על לוח 12×12. בכל סיבוב כל שחקן מניח 2 אבנים על משבצות ריקות.</li>
+      <li>בסוף כל סיבוב הלוח מתפתח, בבת אחת לכל המשבצות (שכנים = 8 המשבצות מסביב, כולל אלכסון):</li>
+      <li><b>לידה:</b> משבצת ריקה עם 4 שכנים או יותר מצבע אחד, ויותר שכנים ממנו מאשר מהצבע השני, הופכת לצבע הזה.</li>
+      <li><b>מוות:</b> אבן בלי אף שכן מהצבע שלה נעלמת. לכן אבן בודדת לא שורדת, וכדאי להניח את שתי האבנים ליד חברים.</li>
+      <li>אחרי 20 סיבובים מנצח מי שיש לו יותר אבנים על הלוח.</li>
+    </ul>
+  </div>
+  <a class="back" href="../index.html">← חזרה לרשימת המשחקים</a>
+
+<script>
+const N = 12, SIZE = N * N, ROUNDS = 20, PER_TURN = 2;
+const NEIGH = [], NEAR2 = [];
+for (let i = 0; i < SIZE; i++) {
+  const r = Math.floor(i / N), c = i % N, list = [], near = [];
+  for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) {
+    if (!dr && !dc) continue;
+    const nr = r + dr, nc = c + dc;
+    if (nr < 0 || nr >= N || nc < 0 || nc >= N) continue;
+    near.push(nr * N + nc);
+    if (Math.abs(dr) <= 1 && Math.abs(dc) <= 1) list.push(nr * N + nc);
+  }
+  NEIGH.push(list);
+  NEAR2.push(near);
+}
+const COLORS = ['כחול', 'ורוד'];
+
+// board[i]: 0 = empty, 1/2 = stone of player 0/1
+let board, turn, first, round, pending, over, mode, level, aiBusy = false, gameId = 0;
+let altStarter = 0;
+const score = [0, 0];
+
+function evolve(b) {
+  const next = b.slice();
+  for (let i = 0; i < SIZE; i++) {
+    let c1 = 0, c2 = 0;
+    for (const n of NEIGH[i]) { if (b[n] === 1) c1++; else if (b[n] === 2) c2++; }
+    if (b[i] === 0) {
+      if (c1 >= 4 && c1 > c2) next[i] = 1;
+      else if (c2 >= 4 && c2 > c1) next[i] = 2;
+    } else if ((b[i] === 1 ? c1 : c2) === 0) next[i] = 0;
+  }
+  return next;
+}
+
+function count(b, p) {
+  let s = 0;
+  for (let i = 0; i < SIZE; i++) if (b[i] === p + 1) s++;
+  return s;
+}
+
+function emptyCount(b) { return SIZE - count(b, 0) - count(b, 1); }
+
+// ---------- AI ----------
+// Empty cells worth considering: near any stone, or the middle of an empty board
+function candidates(b) {
+  const out = [];
+  let any = false;
+  for (let i = 0; i < SIZE; i++) {
+    if (b[i]) { any = true; continue; }
+    for (const n of NEAR2[i]) if (b[n]) { out.push(i); break; }
+  }
+  if (!any) {
+    for (let r = 3; r < N - 3; r++) for (let c = 3; c < N - 3; c++) out.push(r * N + c);
+  }
+  if (out.length === 0) for (let i = 0; i < SIZE; i++) if (!b[i]) out.push(i);
+  return out;
+}
+
+// How p fares after `steps` evolutions with nobody placing anything
+function rollout(b, p, steps) {
+  for (let s = 0; s < steps; s++) b = evolve(b);
+  return count(b, p) - count(b, 1 - p);
+}
+
+// Top `k` pairs of stones for p, best first, by a deterministic look `steps` evolutions ahead
+function bestPairs(b, p, steps, firstWidth, k) {
+  const cand = candidates(b);
+  if (cand.length === 0) return [[]];
+  const singles = cand.map(c => {
+    const x = b.slice(); x[c] = p + 1;
+    return [c, rollout(x, p, steps) + Math.random() * 0.1];
+  }).sort((a, z) => z[1] - a[1]).slice(0, firstWidth);
+  const scored = [], seenPairs = new Set();
+  for (const [c1] of singles) {
+    const x = b.slice(); x[c1] = p + 1;
+    const second = new Set(cand);
+    for (const n of NEIGH[c1]) if (!x[n]) second.add(n);
+    second.delete(c1);
+    if (second.size === 0) { scored.push([[c1], rollout(x, p, steps)]); continue; }
+    for (const c2 of second) {
+      const key = Math.min(c1, c2) * SIZE + Math.max(c1, c2);
+      if (seenPairs.has(key)) continue;
+      seenPairs.add(key);
+      x[c2] = p + 1;
+      scored.push([[c1, c2], rollout(x, p, steps) + Math.random() * 0.1]);
+      x[c2] = 0;
+    }
+  }
+  scored.sort((a, z) => z[1] - a[1]);
+  return scored.slice(0, k).map(s => s[0]);
+}
+
+function bestPair(b, p, steps, firstWidth) { return bestPairs(b, p, steps, firstWidth, 1)[0]; }
+
+function place(b, cellsToPlace, p) {
+  const x = b.slice();
+  for (const c of cellsToPlace) x[c] = p + 1;
+  return x;
+}
+
+function chooseAiMove(p) {
+  const evolvesLeft = ROUNDS - round + 1;
+  const steps = Math.min(3, evolvesLeft);
+  const secondInRound = p !== first;
+  if (level === 'easy') {
+    if (Math.random() < 0.5) {
+      const own = candidates(board).filter(c => NEIGH[c].some(n => board[n] === p + 1));
+      const pool = own.length ? own : candidates(board);
+      if (pool.length === 0) return [];
+      const c1 = pool[Math.floor(Math.random() * pool.length)];
+      const free = NEIGH[c1].filter(n => !board[n]);
+      return free.length ? [c1, free[Math.floor(Math.random() * free.length)]] : [c1];
+    }
+    return bestPair(board, p, 1, 4);
+  }
+  if (level === 'medium') return bestPair(board, p, steps, 6);
+  // hard: let the opponent answer greedily before the board evolves
+  const reply = x => {
+    if (secondInRound) {
+      let y = evolve(x);
+      if (evolvesLeft <= 1) return count(y, p) - count(y, 1 - p);
+      y = place(y, bestPair(y, 1 - p, 1, 3), 1 - p);
+      return rollout(y, p, steps - 1);
+    }
+    const y = place(x, bestPair(x, 1 - p, 1, 3), 1 - p);
+    return rollout(y, p, steps);
+  };
+  // Shortlist with the cheap search, then rescore the top pairs against a reply
+  const shortlist = bestPairs(board, p, steps, 8, 10);
+  let best = shortlist[0], bestV = -Infinity;
+  for (const pr of shortlist) {
+    const v = reply(place(board, pr, p));
+    if (v > bestV) { bestV = v; best = pr; }
+  }
+  return best;
+}
+
+// ---------- Game flow ----------
+const boardEl = document.getElementById('board');
+const statusEl = document.getElementById('status');
+const cells = [];
+for (let i = 0; i < SIZE; i++) {
+  const d = document.createElement('div');
+  d.className = 'cell';
+  d.addEventListener('click', () => onCellClick(i));
+  boardEl.appendChild(d);
+  cells.push(d);
+}
+
+function isAi(p) { return mode === 'ai' && p === 1; }
+
+function newGame() {
+  gameId++;
+  mode = document.getElementById('mode').value;
+  level = document.getElementById('level').value;
+  document.getElementById('level').disabled = mode !== 'ai';
+  document.getElementById('name0').textContent = mode === 'ai' ? 'אתה' : 'כחול';
+  document.getElementById('name1').textContent = mode === 'ai' ? 'מחשב' : 'ורוד';
+  board = new Uint8Array(SIZE);
+  const starter = document.getElementById('starter').value;
+  if (starter === 'alt') { first = altStarter; altStarter = 1 - altStarter; }
+  else first = Number(starter);
+  turn = first;
+  round = 1;
+  pending = [];
+  over = false;
+  aiBusy = false;
+  nextTurn();
+}
+
+function stonesThisTurn() { return Math.min(PER_TURN, emptyCount(board)); }
+
+function nextTurn() {
+  render();
+  if (stonesThisTurn() === 0) return endTurn();
+  if (isAi(turn)) {
+    setStatus('המחשב חושב…');
+    aiBusy = true;
+    const id = gameId;
+    setTimeout(() => {
+      if (id !== gameId) return;
+      const pair = chooseAiMove(turn);
+      setTimeout(() => {
+        if (id !== gameId) return;
+        aiBusy = false;
+        for (const c of pair) board[c] = turn + 1;
+        endTurn(pair);
+      }, 250);
+    }, 50);
+  } else {
+    const who = mode === 'ai' ? 'תורך' : `תור ה${COLORS[turn]}`;
+    setStatus(`סיבוב ${round}/${ROUNDS} · ${who}: הנח ${stonesThisTurn() - pending.length} אבנים`);
+  }
+}
+
+function endTurn(fresh) {
+  pending = [];
+  const roundOver = turn !== first;
+  turn = 1 - turn;
+  if (!roundOver) { render(fresh); return nextTurn(); }
+  // Show the placed stones briefly, then evolve
+  render(fresh);
+  setStatus('הלוח מתפתח…');
+  aiBusy = true;
+  const id = gameId;
+  setTimeout(() => {
+    if (id !== gameId) return;
+    aiBusy = false;
+    board = evolve(board);
+    round++;
+    if (round > ROUNDS || emptyCount(board) === 0) return finish();
+    nextTurn();
+  }, 700);
+}
+
+function finish() {
+  over = true;
+  render();
+  const a = count(board, 0), b = count(board, 1);
+  let msg;
+  if (a === b) msg = `תיקו ${a}–${b}`;
+  else {
+    const winner = a > b ? 0 : 1;
+    score[winner]++;
+    document.getElementById('score' + winner).textContent = score[winner];
+    const res = `${Math.max(a, b)}–${Math.min(a, b)}`;
+    if (mode === 'ai') msg = winner === 0 ? `🏆 ניצחת ${res}!` : `המחשב ניצח ${res}`;
+    else msg = `🏆 ${COLORS[winner]} ניצח ${res}!`;
+  }
+  setStatus(msg, true);
+}
+
+function onCellClick(i) {
+  if (over || aiBusy || isAi(turn)) return;
+  const k = pending.indexOf(i);
+  if (k >= 0) { // take back a stone placed this turn
+    pending.splice(k, 1);
+    board[i] = 0;
+    return nextTurn();
+  }
+  if (board[i]) return;
+  board[i] = turn + 1;
+  pending.push(i);
+  if (pending.length >= stonesThisTurn()) return endTurn(pending.slice());
+  nextTurn();
+}
+
+function setStatus(text, win) {
+  statusEl.textContent = text;
+  statusEl.className = 'status' + (win ? ' win' : '');
+}
+
+function render(fresh) {
+  const preview = over ? board : evolve(board);
+  const open = !over && !aiBusy && !isAi(turn);
+  document.getElementById('live').innerHTML =
+    `אבנים: כחול <b>${count(board, 0)}</b> · ורוד <b>${count(board, 1)}</b>`;
+  for (let i = 0; i < SIZE; i++) {
+    const c = cells[i];
+    c.className = 'cell' + (open && !board[i] ? ' open' : '');
+    let html = '';
+    if (board[i]) {
+      let cls = `stone p${board[i]}`;
+      if (fresh && fresh.includes(i)) cls += ' fresh';
+      if (pending.includes(i)) cls += ' pending';
+      if (!preview[i]) cls += ' dying';
+      html = `<div class="${cls}"></div>`;
+    } else if (preview[i]) {
+      html = `<div class="born p${preview[i]}"></div>`;
+    }
+    if (c.innerHTML !== html) c.innerHTML = html;
+  }
+}
+
+document.getElementById('newGame').addEventListener('click', newGame);
+document.getElementById('mode').addEventListener('change', () => {
+  for (const k of Object.keys(score)) { score[k] = 0; document.getElementById('score' + k).textContent = 0; }
+  newGame();
+});
+newGame();
+</script>
+</body>
+</html>
