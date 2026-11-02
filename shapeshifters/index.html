@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>מחליפי צורה — Shapeshifters</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #182033; --border: #33405f; --text: #e8ecf4; --muted: #8b96ad;
+    --p1: #4cc9f0; --p2: #f72585; --cell: #232d45; --cell2: #1d263c; --cell-hover: #33416a; --accent: #ffd166;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; padding: 16px;
+    background: radial-gradient(circle at top, #1c2540, var(--bg) 70%);
+    color: var(--text); font-family: system-ui, "Segoe UI", Arial, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  h1 { margin: 8px 0 2px; font-size: 30px; }
+  .sub { color: var(--muted); margin-bottom: 14px; text-align: center; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 10px; }
+  select, button {
+    font: inherit; font-size: 15px; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: #1a1a1a; border: none; font-weight: 700; }
+  .score { display: flex; gap: 18px; color: var(--muted); margin-bottom: 4px; }
+  .score b { color: var(--text); }
+  .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; margin-inline-end: 4px; }
+  .status { font-size: 20px; min-height: 32px; margin: 6px 0 12px; text-align: center; }
+  .status.win { color: var(--accent); font-weight: 700; }
+  .board {
+    direction: ltr; display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px;
+    width: min(94vw, 500px); aspect-ratio: 1; background: var(--panel); padding: 8px; border-radius: 14px;
+    box-shadow: 0 10px 30px #0008;
+  }
+  .cell {
+    position: relative; border-radius: 6px; background: var(--cell); display: flex; align-items: center; justify-content: center;
+    transition: background .2s;
+  }
+  .cell.dark { background: var(--cell2); }
+  .cell.goal0 { background: color-mix(in srgb, var(--p1) 16%, var(--cell)); }
+  .cell.goal1 { background: color-mix(in srgb, var(--p2) 16%, var(--cell)); }
+  .cell.last { box-shadow: inset 0 0 0 2px #ffd16688; }
+  .cell.sel { box-shadow: inset 0 0 0 3px var(--accent); }
+  .cell.mine { cursor: pointer; }
+  .cell.option { cursor: pointer; }
+  .cell.option::after {
+    content: ""; position: absolute; width: 26%; height: 26%; border-radius: 50%; background: #ffd166aa;
+  }
+  .cell.option.capture::after { width: 80%; height: 80%; background: none; border: 3px solid #ffd166cc; }
+  .cell.option.winning::after { background: #7ae582; width: 34%; height: 34%; }
+  .cell.option:hover { background: var(--cell-hover); }
+  .piece {
+    width: 80%; height: 80%; border-radius: 50%; position: relative; display: flex; align-items: center; justify-content: center;
+    font-size: min(5.2vw, 27px); font-weight: 700; color: #0f1420; animation: pop .2s ease-out;
+    box-shadow: 0 3px 8px #0009, inset 0 -4px 0 #0003;
+  }
+  .piece.p0 { background: var(--p1); }
+  .piece.p1 { background: var(--p2); }
+  .piece.danger { animation: pulse 1s infinite alternate; }
+  .piece .next {
+    position: absolute; bottom: -4px; right: -4px; width: 46%; height: 46%; border-radius: 50%;
+    background: #0f1420; color: var(--text); font-size: min(2.6vw, 13px); display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border);
+  }
+  @keyframes pop { from { transform: scale(.6); } to { transform: scale(1); } }
+  @keyframes pulse { from { box-shadow: 0 0 0 0 #ffd166; } to { box-shadow: 0 0 0 5px #ffd16699; } }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; color: var(--muted); font-size: 14px; margin-top: 10px; }
+  .legend b { color: var(--text); font-size: 17px; }
+  .rules {
+    max-width: 520px; margin-top: 20px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 18px; line-height: 1.6; color: #cdd5e5;
+  }
+  .rules h2 { margin: 4px 0; font-size: 18px; color: var(--text); }
+  .rules ul { margin: 6px 0; padding-inline-start: 20px; }
+  a.back { color: var(--muted); margin-top: 14px; }
+  .topbar { width: 100%; max-width: 560px; display: flex; }
+  a.home {
+    color: var(--muted); text-decoration: none; font-size: 15px; padding: 6px 12px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--panel); transition: color .15s, border-color .15s;
+  }
+  a.home:hover { color: var(--text); border-color: var(--accent); }
+</style>
+</head>
+<body>
+  <nav class="topbar"><a class="home" href="../index.html">🏠 כל המשחקים</a></nav>
+  <h1>מחליפי צורה</h1>
+  <div class="sub">Shapeshifters · כל כלי משנה את הצורה שלו אחרי כל תזוזה</div>
+
+  <div class="controls">
+    <select id="mode">
+      <option value="ai">נגד המחשב</option>
+      <option value="pvp">שני שחקנים</option>
+    </select>
+    <select id="level">
+      <option value="easy">קל</option>
+      <option value="medium" selected>בינוני</option>
+      <option value="hard">קשה</option>
+    </select>
+    <select id="starter">
+      <option value="alt">פותחים לסירוגין</option>
+      <option value="0">כחול מתחיל</option>
+      <option value="1">ורוד מתחיל</option>
+    </select>
+    <button class="primary" id="newGame">משחק חדש</button>
+  </div>
+
+  <div class="score">
+    <span><span class="dot" style="background:var(--p1)"></span><span id="name0">אתה</span>: <b id="score0">0</b></span>
+    <span><span class="dot" style="background:var(--p2)"></span><span id="name1">מחשב</span>: <b id="score1">0</b></span>
+  </div>
+  <div class="status" id="status"></div>
+  <div class="board" id="board"></div>
+  <div class="legend">
+    <span><b>✱</b> צעד: משבצת אחת לכל כיוון</span>
+    <span><b>✕</b> אלכסון: עד 3 משבצות</span>
+    <span><b>✚</b> קפיצה: בדיוק 2 ישר</span>
+  </div>
+
+  <div class="rules">
+    <h2>חוקים</h2>
+    <ul>
+      <li>לכל שחקן 6 כלים. <b>המטרה: להביא כלי לשורה האחרונה בצד של היריב</b> (השורה הצבועה בצבע שלך) <b>ולשרוד שם תור אחד</b>. אם היריב לא אכל אותו בתור שלו, ניצחת.</li>
+      <li>לכל כלי יש צורה, והיא קובעת איך הוא זז:
+        <b>✱ צעד</b> משבצת אחת לכל כיוון ·
+        <b>✕ אלכסון</b> עד 3 משבצות באלכסון, בלי לעבור דרך כלים ·
+        <b>✚ קפיצה</b> בדיוק 2 משבצות למעלה, למטה או לצדדים, מעל כל מה שבדרך.</li>
+      <li>אחרי כל תזוזה הכלי עובר לצורה הבאה במחזור: ✱ ← ✕ ← ✚ ← ✱. העיגול הקטן על כל כלי מראה את הצורה הבאה שלו.</li>
+      <li>כלי שנוחת על כלי של היריב אוכל אותו. אי אפשר לנחות על כלי שלך.</li>
+      <li>מנצח גם מי שאכל את כל הכלים של היריב, או שליריב אין מהלך. אחרי 40 תורות לכל שחקן בלי מנצח: תיקו.</li>
+      <li>טבעת צהובה מהבהבת מסמנת כלי שכבר בשורה האחרונה, או שיכול להגיע אליה בתור הבא.</li>
+    </ul>
+  </div>
+  <a class="back" href="../index.html">← חזרה לרשימת המשחקים</a>
+
+<script>
+const N = 8, SIZE = N * N, MAX_TURNS = 40;
+const ICONS = ['✱', '✕', '✚'];
+const COLORS = ['כחול', 'ורוד'];
+const GOAL_ROW = [0, N - 1];
+const START_SHAPES = [2, 0, 1, 1, 0, 2];
+
+const inside = (r, c) => r >= 0 && r < N && c >= 0 && c < N;
+const STEP = [], DIAG = [], JUMP = [];
+for (let i = 0; i < SIZE; i++) {
+  const r = Math.floor(i / N), c = i % N;
+  const st = [], dg = [], jp = [];
+  for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) if ((dr || dc) && inside(r + dr, c + dc)) st.push((r + dr) * N + c + dc);
+  for (const [dr, dc] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
+    const ray = [];
+    for (let k = 1; k <= 3 && inside(r + dr * k, c + dc * k); k++) ray.push((r + dr * k) * N + c + dc * k);
+    if (ray.length) dg.push(ray);
+  }
+  for (const [dr, dc] of [[-2, 0], [2, 0], [0, -2], [0, 2]]) if (inside(r + dr, c + dc)) jp.push((r + dr) * N + c + dc);
+  STEP.push(st); DIAG.push(dg); JUMP.push(jp);
+}
+
+// Cell value: 0 = empty, else 1 + owner*3 + shape
+const ownerOf = v => (v - 1) / 3 | 0;
+const shapeOf = v => (v - 1) % 3;
+const rowOf = i => i / N | 0;
+
+// DIST[p][shape][cell]: moves needed to reach p's goal row on an empty board
+const DIST = [0, 1].map(p => {
+  const d = [0, 1, 2].map(() => new Array(SIZE).fill(99));
+  for (let s = 0; s < 3; s++) for (let i = 0; i < SIZE; i++) if (rowOf(i) === GOAL_ROW[p]) d[s][i] = 0;
+  for (let changed = true; changed;) {
+    changed = false;
+    for (let s = 0; s < 3; s++) for (let i = 0; i < SIZE; i++) {
+      if (d[s][i] === 0) continue;
+      const ns = (s + 1) % 3;
+      let best = d[s][i];
+      const reach = s === 0 ? STEP[i] : s === 1 ? DIAG[i].flat() : JUMP[i];
+      for (const t of reach) if (d[ns][t] + 1 < best) best = d[ns][t] + 1;
+      if (best < d[s][i]) { d[s][i] = best; changed = true; }
+    }
+  }
+  return d;
+});
+
+let board, turn, over, mode, level, aiBusy = false, gameId = 0, altStarter = 0;
+let selected = -1, lastMove = null, turnsPlayed;
+const score = [0, 0];
+
+function targets(b, i) {
+  const v = b[i], p = ownerOf(v), s = shapeOf(v), out = [];
+  if (s === 1) {
+    for (const ray of DIAG[i]) for (const t of ray) {
+      if (!b[t]) { out.push(t); continue; }
+      if (ownerOf(b[t]) !== p) out.push(t);
+      break;
+    }
+  } else {
+    for (const t of (s === 0 ? STEP[i] : JUMP[i])) if (!b[t] || ownerOf(b[t]) !== p) out.push(t);
+  }
+  return out;
+}
+
+// Moves are encoded as from*SIZE + to
+function genMoves(b, p) {
+  const res = [];
+  for (let i = 0; i < SIZE; i++) if (b[i] && ownerOf(b[i]) === p) for (const t of targets(b, i)) res.push(i * SIZE + t);
+  return res;
+}
+
+function doMove(b, m) {
+  const f = m / SIZE | 0, t = m % SIZE, v = b[f];
+  b[t] = v - shapeOf(v) + (shapeOf(v) + 1) % 3;
+  b[f] = 0;
+}
+
+function countPieces(b, p) {
+  let n = 0;
+  for (let i = 0; i < SIZE; i++) if (b[i] && ownerOf(b[i]) === p) n++;
+  return n;
+}
+
+function onGoal(b, p) {
+  const base = GOAL_ROW[p] * N;
+  for (let c = 0; c < N; c++) { const v = b[base + c]; if (v && ownerOf(v) === p) return true; }
+  return false;
+}
+
+// Winner after p played move m (or -1). A piece wins once it has survived a turn on the goal row.
+function winnerAfter(b, m, p) {
+  if (onGoal(b, 1 - p)) return 1 - p;
+  if (countPieces(b, 1 - p) === 0) return p;
+  if (genMoves(b, 1 - p).length === 0) return p;
+  return -1;
+}
+
+// ---------- AI ----------
+const TIMEOUT = {}, WIN = 100000;
+let deadline = Infinity, nodes = 0;
+const DIST_W = [120, 60, 28, 14, 8, 5, 3, 2, 1, 0, 0, 0, 0];
+
+function evaluate(b, p) {
+  let v = 0;
+  for (let i = 0; i < SIZE; i++) {
+    const x = b[i];
+    if (!x) continue;
+    const o = ownerOf(x), d = Math.min(DIST[o][shapeOf(x)][i], 12);
+    v += (o === p ? 1 : -1) * (30 + DIST_W[d]);
+  }
+  return v;
+}
+
+function orderMoves(b, moves, p) {
+  const keyed = moves.map(m => {
+    const f = m / SIZE | 0, t = m % SIZE, s = shapeOf(b[f]);
+    let k = 0;
+    if (b[t]) k += 1000 + (30 - DIST[1 - p][shapeOf(b[t])][t]) * 10;
+    k += DIST[p][s][f] - DIST[p][(s + 1) % 3][t];
+    return [m, k];
+  });
+  keyed.sort((a, c) => c[1] - a[1]);
+  return keyed.map(x => x[0]);
+}
+
+function negamax(b, p, depth, alpha, beta, ply) {
+  if ((++nodes & 1023) === 0 && performance.now() > deadline) throw TIMEOUT;
+  if (onGoal(b, p)) return WIN - ply;
+  const moves = genMoves(b, p);
+  if (moves.length === 0) return -(WIN - ply);
+  if (depth === 0) return evaluate(b, p);
+  let best = -Infinity;
+  for (const m of orderMoves(b, moves, p)) {
+    const f = m / SIZE | 0, t = m % SIZE, vf = b[f], vt = b[t];
+    doMove(b, m);
+    let v;
+    if (vt && countPieces(b, 1 - p) === 0) v = WIN - ply - 1;
+    else v = -negamax(b, 1 - p, depth - 1, -beta, -alpha, ply + 1);
+    b[f] = vf; b[t] = vt;
+    if (v > best) best = v;
+    if (v > alpha) alpha = v;
+    if (alpha >= beta) break;
+  }
+  return best;
+}
+
+function searchRoot(p, maxDepth, timeMs) {
+  const b = board.slice();
+  let moves = orderMoves(b, genMoves(b, p).sort(() => Math.random() - 0.5), p);
+  let bestMove = moves[0];
+  deadline = performance.now() + timeMs;
+  nodes = 0;
+  for (let depth = 1; depth <= maxDepth; depth++) {
+    try {
+      const scored = [];
+      let alpha = -Infinity;
+      for (const m of moves) {
+        const f = m / SIZE | 0, t = m % SIZE, vf = b[f], vt = b[t];
+        doMove(b, m);
+        let v;
+        try {
+          v = (vt && countPieces(b, 1 - p) === 0) ? WIN : -negamax(b, 1 - p, depth - 1, -Infinity, -alpha, 1);
+        } finally { b[f] = vf; b[t] = vt; }
+        scored.push([m, v]);
+        if (v > alpha) alpha = v;
+      }
+      scored.sort((a, c) => c[1] - a[1]);
+      moves = scored.map(s => s[0]);
+      bestMove = moves[0];
+      if (Math.abs(scored[0][1]) > WIN - 1000) break;
+    } catch (e) {
+      if (e !== TIMEOUT) throw e;
+      break;
+    }
+  }
+  return bestMove;
+}
+
+function chooseAiMove(p) {
+  const moves = genMoves(board, p);
+  if (level === 'easy') {
+    if (Math.random() < 0.35) return moves[Math.floor(Math.random() * moves.length)];
+    return searchRoot(p, 2, 300);
+  }
+  if (level === 'medium') return searchRoot(p, 3, 700);
+  return searchRoot(p, 40, 1500);
+}
+
+// ---------- Game flow ----------
+const boardEl = document.getElementById('board');
+const statusEl = document.getElementById('status');
+const cells = [];
+for (let i = 0; i < SIZE; i++) {
+  const d = document.createElement('div');
+  d.addEventListener('click', () => onCellClick(i));
+  boardEl.appendChild(d);
+  cells.push(d);
+}
+
+function isAi(p) { return mode === 'ai' && p === 1; }
+
+function newGame() {
+  gameId++;
+  mode = document.getElementById('mode').value;
+  level = document.getElementById('level').value;
+  document.getElementById('level').disabled = mode !== 'ai';
+  document.getElementById('name0').textContent = mode === 'ai' ? 'אתה' : 'כחול';
+  document.getElementById('name1').textContent = mode === 'ai' ? 'מחשב' : 'ורוד';
+  board = new Uint8Array(SIZE);
+  for (let k = 0; k < 6; k++) {
+    board[(N - 1) * N + k + 1] = 1 + START_SHAPES[k];
+    board[k + 1] = 4 + START_SHAPES[k];
+  }
+  const starter = document.getElementById('starter').value;
+  if (starter === 'alt') { turn = altStarter; altStarter = 1 - altStarter; }
+  else turn = Number(starter);
+  over = false;
+  aiBusy = false;
+  selected = -1;
+  lastMove = null;
+  turnsPlayed = 0;
+  nextTurn();
+}
+
+function finish(winner, msg) {
+  over = true;
+  if (winner >= 0) {
+    score[winner]++;
+    document.getElementById('score' + winner).textContent = score[winner];
+  }
+  render();
+  setStatus(msg, true);
+}
+
+function nextTurn() {
+  selected = -1;
+  render();
+  if (isAi(turn)) {
+    setStatus('המחשב חושב…');
+    aiBusy = true;
+    const id = gameId;
+    setTimeout(() => {
+      if (id !== gameId) return;
+      const m = chooseAiMove(turn);
+      setTimeout(() => {
+        if (id !== gameId) return;
+        aiBusy = false;
+        makeMove(m);
+      }, 250);
+    }, 50);
+  } else {
+    const warn = onGoal(board, 1 - turn) ? ' · ⚠ כלי של היריב בשורה האחרונה: אכול אותו עכשיו!' : '';
+    setStatus((mode === 'ai' ? 'תורך: בחר כלי ולאן להזיז אותו' : `תור ה${COLORS[turn]}`) + warn);
+  }
+}
+
+function makeMove(m) {
+  doMove(board, m);
+  lastMove = m;
+  turnsPlayed++;
+  const w = winnerAfter(board, m, turn);
+  if (w >= 0) {
+    const how = onGoal(board, w) ? 'שרד בשורה האחרונה' : 'היריב נשאר בלי מהלך';
+    if (mode === 'ai') finish(w, w === 0 ? `🏆 ניצחת! ${how}` : `המחשב ניצח: ${how}`);
+    else finish(w, `🏆 ${COLORS[w]} ניצח!`);
+    return;
+  }
+  if (turnsPlayed >= MAX_TURNS * 2) { finish(-1, 'תיקו: נגמרו התורות'); return; }
+  turn = 1 - turn;
+  nextTurn();
+}
+
+function onCellClick(i) {
+  if (over || aiBusy || isAi(turn)) return;
+  if (board[i] && ownerOf(board[i]) === turn) {
+    selected = selected === i ? -1 : i;
+    render();
+    return;
+  }
+  if (selected >= 0 && targets(board, selected).includes(i)) makeMove(selected * SIZE + i);
+}
+
+function setStatus(text, win) {
+  statusEl.textContent = text;
+  statusEl.className = 'status' + (win ? ' win' : '');
+}
+
+// Pieces of player p that stand on, or can reach, p's goal row
+function dangerCells(p) {
+  const out = new Set();
+  for (const m of genMoves(board, p)) if (rowOf(m % SIZE) === GOAL_ROW[p]) out.add(m / SIZE | 0);
+  for (let c = 0; c < N; c++) { const i = GOAL_ROW[p] * N + c; if (board[i] && ownerOf(board[i]) === p) out.add(i); }
+  return out;
+}
+
+function render() {
+  const opts = selected >= 0 ? targets(board, selected) : [];
+  const danger = over ? new Set() : new Set([...dangerCells(0), ...dangerCells(1)]);
+  const myTurn = !over && !isAi(turn) && !aiBusy;
+  for (let i = 0; i < SIZE; i++) {
+    const r = rowOf(i), c = i % N, v = board[i];
+    let cls = 'cell' + ((r + c) % 2 ? ' dark' : '');
+    if (r === GOAL_ROW[0]) cls += ' goal0';
+    if (r === GOAL_ROW[1]) cls += ' goal1';
+    if (lastMove !== null && (i === (lastMove / SIZE | 0) || i === lastMove % SIZE)) cls += ' last';
+    if (i === selected) cls += ' sel';
+    if (myTurn && v && ownerOf(v) === turn) cls += ' mine';
+    if (opts.includes(i)) {
+      cls += ' option';
+      if (v) cls += ' capture';
+      if (r === GOAL_ROW[turn]) cls += ' winning';
+    }
+    const el = cells[i];
+    el.className = cls;
+    const key = v ? v + (danger.has(i) ? 'd' : '') : '';
+    if (el.dataset.key !== key) {
+      el.dataset.key = key;
+      el.innerHTML = v
+        ? `<div class="piece p${ownerOf(v)}${danger.has(i) ? ' danger' : ''}">${ICONS[shapeOf(v)]}<span class="next">${ICONS[(shapeOf(v) + 1) % 3]}</span></div>`
+        : '';
+    }
+  }
+}
+
+document.getElementById('newGame').addEventListener('click', newGame);
+document.getElementById('mode').addEventListener('change', () => {
+  for (const k of Object.keys(score)) { score[k] = 0; document.getElementById('score' + k).textContent = 0; }
+  newGame();
+});
+newGame();
+</script>
+</body>
+</html>

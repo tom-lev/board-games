@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>דוחפים ומושכים — Push &amp; Pull</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #182033; --border: #33405f; --text: #e8ecf4; --muted: #8b96ad;
+    --p1: #4cc9f0; --p2: #f72585; --cell: #232d45; --edge: #2b2a3f; --cell-hover: #33416a; --accent: #ffd166;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; padding: 16px;
+    background: radial-gradient(circle at top, #1c2540, var(--bg) 70%);
+    color: var(--text); font-family: system-ui, "Segoe UI", Arial, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  h1 { margin: 8px 0 2px; font-size: 30px; }
+  .sub { color: var(--muted); margin-bottom: 14px; text-align: center; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 10px; }
+  select, button {
+    font: inherit; font-size: 15px; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: #1a1a1a; border: none; font-weight: 700; }
+  .score { display: flex; gap: 18px; color: var(--muted); margin-bottom: 4px; }
+  .score b { color: var(--text); }
+  .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; margin-inline-end: 4px; }
+  .fallen { color: var(--muted); font-size: 15px; }
+  .fallen b { color: var(--text); }
+  .status { font-size: 20px; min-height: 32px; margin: 6px 0 12px; text-align: center; }
+  .status.win { color: var(--accent); font-weight: 700; }
+  .board {
+    direction: ltr; display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px;
+    width: min(94vw, 470px); aspect-ratio: 1; background: #3a1f33; padding: 8px; border-radius: 14px;
+    box-shadow: 0 10px 30px #0008, 0 0 0 3px #f7258533;
+  }
+  .cell {
+    position: relative; border-radius: 7px; background: var(--cell); display: flex; align-items: center; justify-content: center;
+    transition: background .2s;
+  }
+  .cell.edge { background: var(--edge); }
+  .cell.sea { background: #12304a; opacity: .5; }
+  .cell.sinking { background: #3b3050; animation: sink 1.2s infinite alternate; }
+  @keyframes sink { from { box-shadow: inset 0 0 0 0 #4cc9f055; } to { box-shadow: inset 0 0 0 4px #4cc9f055; } }
+  .cell.last { box-shadow: inset 0 0 0 2px #ffd16688; }
+  .cell.sel { box-shadow: inset 0 0 0 3px var(--accent); }
+  .cell.mine { cursor: pointer; }
+  .cell.option { cursor: pointer; }
+  .cell.option::after {
+    content: ""; position: absolute; width: 26%; height: 26%; border-radius: 50%; background: #ffd166aa; pointer-events: none;
+  }
+  .cell.option.occupied::after { width: 86%; height: 86%; background: none; border: 3px dashed #ffd166cc; }
+  .cell.option:hover { background: var(--cell-hover); }
+  .cell.doomed::before {
+    content: "✖"; position: absolute; z-index: 2; color: #ff4d4d; font-size: min(7vw, 34px); font-weight: 900;
+    text-shadow: 0 0 6px #000; pointer-events: none;
+  }
+  .piece {
+    width: 80%; height: 80%; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: min(5.6vw, 28px); font-weight: 700; color: #0f1420; animation: pop .2s ease-out;
+    box-shadow: 0 3px 8px #0009, inset 0 -4px 0 #0003; pointer-events: none;
+  }
+  .piece.p0 { background: var(--p1); }
+  .piece.p1 { background: var(--p2); }
+  .piece.t1 { border-radius: 24%; }
+  .piece.t2 { border-radius: 50% 12% 50% 12%; }
+  @keyframes pop { from { transform: scale(.6); } to { transform: scale(1); } }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; color: var(--muted); font-size: 14px; margin-top: 10px; max-width: 520px; }
+  .legend b { color: var(--text); font-size: 17px; }
+  .rules {
+    max-width: 520px; margin-top: 20px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 18px; line-height: 1.6; color: #cdd5e5;
+  }
+  .rules h2 { margin: 4px 0; font-size: 18px; color: var(--text); }
+  .rules ul { margin: 6px 0; padding-inline-start: 20px; }
+  a.back { color: var(--muted); margin-top: 14px; }
+  .topbar { width: 100%; max-width: 560px; display: flex; }
+  a.home {
+    color: var(--muted); text-decoration: none; font-size: 15px; padding: 6px 12px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--panel); transition: color .15s, border-color .15s;
+  }
+  a.home:hover { color: var(--text); border-color: var(--accent); }
+</style>
+</head>
+<body>
+  <nav class="topbar"><a class="home" href="../index.html">🏠 כל המשחקים</a></nav>
+  <h1>דוחפים ומושכים</h1>
+  <div class="sub">Push &amp; Pull · בלי אכילה: מפילים את היריב מהלוח</div>
+
+  <div class="controls">
+    <select id="mode">
+      <option value="ai">נגד המחשב</option>
+      <option value="pvp">שני שחקנים</option>
+    </select>
+    <select id="level">
+      <option value="easy">קל</option>
+      <option value="medium" selected>בינוני</option>
+      <option value="hard">קשה</option>
+    </select>
+    <select id="starter">
+      <option value="alt">פותחים לסירוגין</option>
+      <option value="0">כחול מתחיל</option>
+      <option value="1">ורוד מתחיל</option>
+    </select>
+    <button class="primary" id="newGame">משחק חדש</button>
+  </div>
+
+  <div class="score">
+    <span><span class="dot" style="background:var(--p1)"></span><span id="name0">אתה</span>: <b id="score0">0</b></span>
+    <span><span class="dot" style="background:var(--p2)"></span><span id="name1">מחשב</span>: <b id="score1">0</b></span>
+  </div>
+  <div class="fallen" id="fallen"></div>
+  <div class="status" id="status"></div>
+  <div class="board" id="board"></div>
+  <div class="legend">
+    <span><b>➜</b> דוחף</span>
+    <span><b>⇠</b> מושך</span>
+    <span><b>⇄</b> מחליף</span>
+    <span>✖ אדום = ייפול מהלוח במהלך הזה</span>
+  </div>
+
+  <div class="rules">
+    <h2>חוקים</h2>
+    <ul>
+      <li>לכל שחקן 5 כלים. <b>המטרה: להפיל 3 כלים של היריב מחוץ ללוח.</b> אין אכילה, ואין קירות מסביב.</li>
+      <li>בתורך מזיזים כלי אחד משבצת אחת למעלה, למטה או לצדדים, וכל סוג כלי עושה משהו נוסף:</li>
+      <li><b>➜ דוחף:</b> יכול לזוז גם למשבצת תפוסה. הכלי שעמד שם (של כל צבע) <b>מחליק באותו כיוון עד שהוא נעצר בכלי אחר. אם אין שום דבר בדרך, הוא נופל מהלוח</b>. אי אפשר לדחוף כלי שיש כלי צמוד מאחוריו.</li>
+      <li><b>⇠ מושך:</b> זז למשבצת ריקה, וגורר אחריו את הכלי שעמד מאחוריו (של כל צבע).</li>
+      <li><b>⇄ מחליף:</b> זז למשבצת ריקה, <b>או</b> מחליף מקום עם הכלי הראשון שנמצא בקו ישר ממנו (של כל צבע).</li>
+      <li>🌊 <b>האי שוקע:</b> אחרי 15 תורות לכל שחקן הטבעת החיצונית של הלוח שוקעת, ואחרי 30 תורות גם הטבעת שאחריה. כלים שעומדים עליה נופלים.</li>
+      <li>אם שני השחקנים מגיעים ל-3 כלים שנפלו באותו מהלך, מנצח מי שאיבד פחות (ואם המספר שווה, תיקו). אחרי 40 תורות לכל שחקן, מנצח מי שהפיל יותר.</li>
+      <li>כשמצביעים על מהלך, ✖ אדום מסמן כלי שייפול. טיפ: כלי עם "גב" (כלי צמוד מאחוריו) מוגן מדחיפה מהכיוון הזה.</li>
+    </ul>
+  </div>
+  <a class="back" href="../index.html">← חזרה לרשימת המשחקים</a>
+
+<script>
+const N = 6, SIZE = N * N, MAX_TURNS = 40, TO_WIN = 3;
+const PUSHER = 0, PULLER = 1, SWAPPER = 2;
+const ICONS = ['➜', '⇠', '⇄'];
+const COLORS = ['כחול', 'ורוד'];
+const SETUP = [PUSHER, PULLER, SWAPPER, PULLER, PUSHER];
+// Directions: up, down, left, right. The opposite of d is d ^ 1.
+const DIRS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+// The island sinks: once SINK_AT[k] moves have been played in total, ring k (0 = outer edge) goes under water
+const SINK_AT = [30, 60];
+const RING = i => Math.min(i / N | 0, i % N, N - 1 - (i / N | 0), N - 1 - i % N);
+// NB_BY_SUNK[s][i][d]: neighbour of i in direction d after s rings have sunk (-1 = water)
+const NB_BY_SUNK = [0, 1, 2].map(s => {
+  const nb = [];
+  for (let i = 0; i < SIZE; i++) {
+    const r = Math.floor(i / N), c = i % N;
+    nb.push(DIRS.map(([dr, dc]) => {
+      const nr = r + dr, nc = c + dc;
+      return nr >= s && nr < N - s && nc >= s && nc < N - s ? nr * N + nc : -1;
+    }));
+  }
+  return nb;
+});
+let NB = NB_BY_SUNK[0];
+function sunkRings(ply) { return SINK_AT.filter(a => ply >= a).length; }
+function setPly(ply) { NB = NB_BY_SUNK[sunkRings(ply)]; }
+// Called once the total reaches ply: pieces on a ring that sinks now fall
+function sinkIfDue(b, l, ply) {
+  const k = SINK_AT.indexOf(ply);
+  if (k < 0) return;
+  for (let i = 0; i < SIZE; i++) if (b[i] && RING(i) === k) { l[ownerOf(b[i])]++; b[i] = 0; }
+}
+
+// Cell value: 0 = empty, else 1 + owner*3 + type
+const ownerOf = v => (v - 1) / 3 | 0;
+const typeOf = v => (v - 1) % 3;
+
+// lost[p]: how many of p's pieces have fallen off
+let board, lost, turn, over, mode, level, aiBusy = false, gameId = 0, altStarter = 0;
+let selected = -1, lastMove = null, turnsPlayed, hoverMove = -1;
+const score = [0, 0];
+
+// Move encoding: piece*8 + dir*2 + kind (kind 1 = swapper swap, else 0)
+function genMoves(b, p) {
+  const res = [];
+  for (let i = 0; i < SIZE; i++) {
+    const v = b[i];
+    if (!v || ownerOf(v) !== p) continue;
+    const type = typeOf(v);
+    for (let d = 0; d < 4; d++) {
+      const t = NB[i][d];
+      if (t < 0) continue;
+      if (!b[t]) res.push(i * 8 + d * 2);
+      else if (type === PUSHER && (NB[t][d] < 0 || !b[NB[t][d]])) res.push(i * 8 + d * 2);
+      if (type === SWAPPER) {
+        let e = t;
+        while (e >= 0 && !b[e]) e = NB[e][d];
+        if (e >= 0) res.push(i * 8 + d * 2 + 1);
+      }
+    }
+  }
+  return res;
+}
+
+// The cell the player clicks to choose move m
+function moveTarget(b, m) {
+  const i = m >> 3, d = (m >> 1) & 3;
+  let t = NB[i][d];
+  if (m & 1) while (!b[t]) t = NB[t][d];
+  return t;
+}
+
+function applyMove(b, m, p, lostArr) {
+  const i = m >> 3, d = (m >> 1) & 3, v = b[i], t = NB[i][d];
+  const type = typeOf(v);
+  if (type === PUSHER) {
+    if (b[t]) {
+      // the pushed piece slides until it hits a piece, or falls off the edge
+      const e = slideEnd(b, t, d);
+      if (NB[e][d] < 0) lostArr[ownerOf(b[t])]++;
+      else b[e] = b[t];
+    }
+    b[t] = v; b[i] = 0;
+  } else if (type === PULLER) {
+    const behind = NB[i][d ^ 1];
+    b[t] = v;
+    if (behind >= 0 && b[behind]) { b[i] = b[behind]; b[behind] = 0; }
+    else b[i] = 0;
+  } else if (m & 1) {
+    const e = moveTarget(b, m);
+    b[i] = b[e]; b[e] = v;
+  } else {
+    b[t] = v; b[i] = 0;
+  }
+}
+
+// Last free cell a piece at t reaches when sliding in direction d
+function slideEnd(b, t, d) {
+  let e = t;
+  while (NB[e][d] >= 0 && !b[NB[e][d]]) e = NB[e][d];
+  return e;
+}
+
+// Owner of the piece pushed off by move m, or -1. Only pushers knock pieces off.
+function pushVictim(b, m) {
+  const i = m >> 3, d = (m >> 1) & 3, t = NB[i][d];
+  if (typeOf(b[i]) !== PUSHER || !b[t]) return -1;
+  return NB[slideEnd(b, t, d)][d] < 0 ? ownerOf(b[t]) : -1;
+}
+
+// -1 = no winner yet, 0/1 = winner, 2 = draw
+function winnerNow(l) {
+  const a = l[0] >= TO_WIN, c = l[1] >= TO_WIN;
+  if (a && c) return l[0] === l[1] ? 2 : l[0] < l[1] ? 0 : 1;
+  if (a) return 1;
+  if (c) return 0;
+  return -1;
+}
+
+function initialBoard() {
+  const b = new Uint8Array(SIZE);
+  SETUP.forEach((type, k) => {
+    b[(N - 2) * N + k + 1] = 1 + type;
+    b[N + (N - 2 - k)] = 4 + type;
+  });
+  return b;
+}
+
+// ---------- AI ----------
+// Monte Carlo Tree Search: pushes change the board sharply, so random playouts judge positions
+// better than a static evaluation would.
+
+// Playout policy: grab a knock-off when one exists, avoid pushing your own piece off, else random
+function playoutMove(b, p) {
+  const ms = genMoves(b, p);
+  if (!ms.length) return -1;
+  const good = [], safe = [];
+  for (const m of ms) {
+    const vic = pushVictim(b, m);
+    if (vic === 1 - p) good.push(m);
+    else if (vic !== p) safe.push(m);
+  }
+  if (good.length && Math.random() < 0.9) return good[Math.random() * good.length | 0];
+  const pool = safe.length ? safe : ms;
+  return pool[Math.random() * pool.length | 0];
+}
+
+// Result for blue in [0, 1]
+function terminalValue(w) { return w === 0 ? 1 : w === 1 ? 0 : 0.5; }
+function heuristicValue(l) { return Math.min(0.95, Math.max(0.05, 0.5 + 0.18 * (l[1] - l[0]))); }
+
+function rollout(b, l, p, ply) {
+  for (let step = 0; step < 30; step++) {
+    if (ply >= MAX_TURNS * 2) return l[0] === l[1] ? 0.5 : l[0] < l[1] ? 1 : 0;
+    setPly(ply);
+    const m = playoutMove(b, p);
+    if (m < 0) return p === 0 ? 0 : 1;
+    applyMove(b, m, p, l);
+    sinkIfDue(b, l, ply + 1);
+    const w = winnerNow(l);
+    if (w >= 0) return terminalValue(w);
+    p = 1 - p; ply++;
+  }
+  return heuristicValue(l);
+}
+
+// Plays m for p on copies of the current position; returns the new board and losses
+function tryMove(m, p) {
+  const b2 = board.slice(), l2 = lost.slice();
+  applyMove(b2, m, p, l2);
+  sinkIfDue(b2, l2, turnsPlayed + 1);
+  return [b2, l2];
+}
+
+// Moves after which the opponent cannot win immediately (all moves if none are safe)
+function safeMoves(p, moves) {
+  const out = [];
+  for (const m of moves) {
+    setPly(turnsPlayed);
+    const [b2, l2] = tryMove(m, p);
+    const w = winnerNow(l2);
+    if (w === p) { out.length = 0; out.push(m); break; }
+    if (w >= 0) continue;
+    setPly(turnsPlayed + 1);
+    let danger = false;
+    for (const r of genMoves(b2, 1 - p)) {
+      const vic = pushVictim(b2, r);
+      if (vic === p && l2[p] + 1 >= TO_WIN && l2[1 - p] < TO_WIN) { danger = true; break; }
+    }
+    if (!danger) out.push(m);
+  }
+  setPly(turnsPlayed);
+  return out.length ? out : moves;
+}
+
+function mcts(p, timeMs, rootMoves) {
+  const makeNode = (m, mover, moves) => ({ m, mover, untried: moves, children: [], n: 0, w: 0, terminal: -1 });
+  const root = makeNode(-1, 1 - p, rootMoves.slice().sort(() => Math.random() - 0.5));
+  const end = performance.now() + timeMs;
+  let iters = 0;
+  while ((iters & 31) !== 0 || performance.now() < end) {
+    iters++;
+    const b = board.slice(), l = lost.slice();
+    let node = root, player = p, ply = turnsPlayed;
+    const path = [root];
+    setPly(ply);
+    while (node.terminal < 0 && node.untried.length === 0 && node.children.length) {
+      const logN = Math.log(node.n);
+      let best = null, bv = -Infinity;
+      for (const ch of node.children) {
+        const v = ch.w / ch.n + 1.1 * Math.sqrt(logN / ch.n);
+        if (v > bv) { bv = v; best = ch; }
+      }
+      node = best;
+      applyMove(b, node.m, player, l);
+      player = 1 - player; ply++;
+      sinkIfDue(b, l, ply); setPly(ply);
+      path.push(node);
+    }
+    let value;
+    if (node.terminal >= 0) value = terminalValue(node.terminal);
+    else {
+      if (node.untried.length) {
+        const m = node.untried.pop();
+        applyMove(b, m, player, l);
+        sinkIfDue(b, l, ply + 1); setPly(ply + 1);
+        const w = winnerNow(l);
+        const child = makeNode(m, player, w >= 0 ? [] : genMoves(b, 1 - player).sort(() => Math.random() - 0.5));
+        if (w >= 0) child.terminal = w;
+        node.children.push(child);
+        node = child;
+        path.push(child);
+        player = 1 - player; ply++;
+        value = w >= 0 ? terminalValue(w) : rollout(b, l, player, ply);
+      } else value = 0.5; // no legal moves: treat as even
+    }
+    for (const nd of path) { nd.n++; nd.w += nd.mover === 0 ? value : 1 - value; }
+  }
+  setPly(turnsPlayed);
+  let best = root.children[0];
+  for (const ch of root.children) if (ch.n > best.n) best = ch;
+  return best ? best.m : rootMoves[0];
+}
+
+function chooseAiMove(p) {
+  const moves = genMoves(board, p);
+  for (const m of moves) if (winnerNow(tryMove(m, p)[1]) === p) return m;
+  if (level === 'easy') {
+    if (Math.random() < 0.4) return moves[Math.random() * moves.length | 0];
+    return mcts(p, 150, moves);
+  }
+  const safe = safeMoves(p, moves);
+  if (level === 'medium') return mcts(p, 500, safe);
+  return mcts(p, 1500, safe);
+}
+
+// ---------- Game flow ----------
+const boardEl = document.getElementById('board');
+const statusEl = document.getElementById('status');
+const cells = [];
+for (let i = 0; i < SIZE; i++) {
+  const d = document.createElement('div');
+  d.addEventListener('click', () => onCellClick(i));
+  d.addEventListener('mouseenter', () => onHover(i));
+  d.addEventListener('mouseleave', () => { if (hoverMove >= 0) { hoverMove = -1; render(); } });
+  boardEl.appendChild(d);
+  cells.push(d);
+}
+
+function isAi(p) { return mode === 'ai' && p === 1; }
+
+function newGame() {
+  gameId++;
+  mode = document.getElementById('mode').value;
+  level = document.getElementById('level').value;
+  document.getElementById('level').disabled = mode !== 'ai';
+  document.getElementById('name0').textContent = mode === 'ai' ? 'אתה' : 'כחול';
+  document.getElementById('name1').textContent = mode === 'ai' ? 'מחשב' : 'ורוד';
+  board = initialBoard();
+  lost = [0, 0];
+  setPly(0);
+  const starter = document.getElementById('starter').value;
+  if (starter === 'alt') { turn = altStarter; altStarter = 1 - altStarter; }
+  else turn = Number(starter);
+  over = false;
+  aiBusy = false;
+  selected = -1;
+  hoverMove = -1;
+  lastMove = null;
+  turnsPlayed = 0;
+  nextTurn();
+}
+
+function finish(winner, msg) {
+  over = true;
+  if (winner === 0 || winner === 1) {
+    score[winner]++;
+    document.getElementById('score' + winner).textContent = score[winner];
+  }
+  render();
+  setStatus(msg, true);
+}
+
+function nextTurn() {
+  selected = -1;
+  hoverMove = -1;
+  render();
+  if (isAi(turn)) {
+    setStatus('המחשב חושב…');
+    aiBusy = true;
+    const id = gameId;
+    setTimeout(() => {
+      if (id !== gameId) return;
+      const m = chooseAiMove(turn);
+      setTimeout(() => {
+        if (id !== gameId) return;
+        aiBusy = false;
+        makeMove(m);
+      }, 250);
+    }, 50);
+  } else {
+    setStatus(mode === 'ai' ? 'תורך: בחר כלי ואז לאן' : `תור ה${COLORS[turn]}`);
+  }
+}
+
+function makeMove(m) {
+  lastMove = [m >> 3, moveTarget(board, m)];
+  applyMove(board, m, turn, lost);
+  turnsPlayed++;
+  sinkIfDue(board, lost, turnsPlayed);
+  setPly(turnsPlayed);
+  let w = winnerNow(lost);
+  if (w < 0 && turnsPlayed >= MAX_TURNS * 2) w = lost[0] === lost[1] ? 2 : lost[0] < lost[1] ? 0 : 1;
+  if (w === 2) { finish(2, 'תיקו!'); return; }
+  if (w >= 0) {
+    if (mode === 'ai') finish(w, w === 0 ? '🏆 ניצחת! הפלת 3 כלים של המחשב' : 'המחשב ניצח: הוא הפיל 3 כלים שלך');
+    else finish(w, `🏆 ${COLORS[w]} ניצח!`);
+    return;
+  }
+  turn = 1 - turn;
+  nextTurn();
+}
+
+function optionsFor(i) {
+  const map = new Map();
+  for (const m of genMoves(board, turn)) if (m >> 3 === i) map.set(moveTarget(board, m), m);
+  return map;
+}
+
+function onCellClick(i) {
+  if (over || aiBusy || isAi(turn)) return;
+  if (selected >= 0) {
+    const m = optionsFor(selected).get(i);
+    if (m !== undefined) { makeMove(m); return; }
+  }
+  if (board[i] && ownerOf(board[i]) === turn) {
+    selected = selected === i ? -1 : i;
+    render();
+  }
+}
+
+function onHover(i) {
+  if (over || selected < 0) return;
+  const m = optionsFor(selected).get(i);
+  const nm = m === undefined ? -1 : m;
+  if (nm !== hoverMove) { hoverMove = nm; render(); }
+}
+
+function setStatus(text, win) {
+  statusEl.textContent = text;
+  statusEl.className = 'status' + (win ? ' win' : '');
+}
+
+function render() {
+  const opts = selected >= 0 && !over ? optionsFor(selected) : new Map();
+  const doomed = new Set();
+  if (hoverMove >= 0) {
+    if (pushVictim(board, hoverMove) >= 0) doomed.add(NB[hoverMove >> 3][(hoverMove >> 1) & 3]);
+  }
+  const myTurn = !over && !isAi(turn) && !aiBusy;
+  const sunk = sunkRings(turnsPlayed), nextSink = SINK_AT[sunk];
+  const left = nextSink === undefined ? -1 : nextSink - turnsPlayed;
+  document.getElementById('fallen').innerHTML =
+    `הופלו: כחול <b>${lost[0]}</b>/${TO_WIN} · ורוד <b>${lost[1]}</b>/${TO_WIN}` +
+    (left > 0 && !over ? ` · 🌊 הטבעת ${sunk ? 'הבאה' : 'החיצונית'} שוקעת בעוד <b>${left}</b> מהלכים` : '');
+  for (let i = 0; i < SIZE; i++) {
+    const v = board[i], ring = RING(i);
+    let cls = 'cell';
+    if (ring < sunk) cls += ' sea';
+    else if (ring === sunk) cls += left > 0 && left <= 6 && !over ? ' sinking' : ' edge';
+    if (lastMove && (i === lastMove[0] || i === lastMove[1])) cls += ' last';
+    if (i === selected) cls += ' sel';
+    if (myTurn && v && ownerOf(v) === turn) cls += ' mine';
+    if (opts.has(i)) cls += ' option' + (v ? ' occupied' : '');
+    if (doomed.has(i)) cls += ' doomed';
+    const el = cells[i];
+    el.className = cls;
+    const key = v ? String(v) : '';
+    if (el.dataset.key !== key) {
+      el.dataset.key = key;
+      el.innerHTML = v ? `<div class="piece p${ownerOf(v)} t${typeOf(v)}">${ICONS[typeOf(v)]}</div>` : '';
+    }
+  }
+}
+
+document.getElementById('newGame').addEventListener('click', newGame);
+document.getElementById('mode').addEventListener('change', () => {
+  for (const k of Object.keys(score)) { score[k] = 0; document.getElementById('score' + k).textContent = 0; }
+  newGame();
+});
+newGame();
+</script>
+</body>
+</html>
