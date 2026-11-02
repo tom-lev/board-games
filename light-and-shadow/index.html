@@ -59,9 +59,16 @@
   .rules h2 { margin: 4px 0; font-size: 18px; color: var(--text); }
   .rules ul { margin: 6px 0; padding-inline-start: 20px; }
   a.back { color: var(--muted); margin-top: 14px; }
+  .topbar { width: 100%; max-width: 560px; display: flex; }
+  a.home {
+    color: var(--muted); text-decoration: none; font-size: 15px; padding: 6px 12px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--panel); transition: color .15s, border-color .15s;
+  }
+  a.home:hover { color: var(--text); border-color: var(--accent); }
 </style>
 </head>
 <body>
+  <nav class="topbar"><a class="home" href="../index.html">🏠 כל המשחקים</a></nav>
   <h1>אור וצל</h1>
   <div class="sub">Light &amp; Shadow · מדליקים מנורות בחושך, וכל מנורה היא גם קיר</div>
 
